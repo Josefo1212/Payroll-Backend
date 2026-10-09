@@ -1,0 +1,37 @@
+# Dependencies
+node_modules
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build and test output
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Runtime data
+*.pid
+*.pid.lock
+*.seed
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
