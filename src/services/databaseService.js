@@ -1,14 +1,7 @@
 import { pool } from "../config/database.js";
-import queries from "../queries/queries.json" with { type: "json" };
-
 class DatabaseService {
   constructor() {
     this.pool = pool;
-  }
-
-  async testConnection() {
-    const { rows } = await this.pool.query(queries.testConnection);
-    return rows[0];
   }
 
   async query(text, params = []) {
@@ -46,5 +39,3 @@ class DatabaseService {
 }
 
 export const dbService = new DatabaseService();
-const testConnection = () => dbService.testConnection();
-export { testConnection };
