@@ -1,0 +1,32 @@
+-- Perfil de superusuario y su asignación al usuario de prueba.
+-- Correr DESPUÉS de db/migrations/001_esquema_seguridad.sql
+-- (Usuario ya no tiene Perfil_id; los perfiles viven en Usuario_Perfil).
+-- Idempotente: se puede correr varias veces sin duplicar datos.
+--
+-- Nota: el perfil todavía NO tiene permisos (Permiso_Metodo/Permiso_Opcion);
+-- eso llega con el seed de seguridad, cuando existan los métodos y opciones.
+
+BEGIN;
+
+INSERT INTO perfil (nombre_perfil, descripcion)
+VALUES ('Superusuario', 'Acceso total al sistema')
+ON CONFLICT (nombre_perfil) DO NOTHING;
+
+-- El perfil temporal de prueba deja de aplicar: el usuario de prueba pasa a
+-- ser superusuario. La sesión todavía guarda un solo perfil, así que se quita
+-- el vínculo viejo para que el login resuelva a 'Superusuario'.
+DELETE FROM usuario_perfil up
+USING usuario u, perfil pf
+WHERE up.usuario_id = u.id
+  AND up.perfil_id = pf.id
+  AND u.username = 'admin_prueba'
+  AND pf.nombre_perfil = 'PRUEBA_LOGIN';
+
+INSERT INTO usuario_perfil (usuario_id, perfil_id)
+SELECT u.id, pf.id
+FROM usuario u
+JOIN perfil pf ON pf.nombre_perfil = 'Superusuario'
+WHERE u.username = 'admin_prueba'
+ON CONFLICT (usuario_id, perfil_id) DO NOTHING;
+
+COMMIT;

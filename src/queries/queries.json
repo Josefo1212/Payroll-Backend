@@ -1,3 +1,0 @@
-{
-  "findUserByUsername": "SELECT u.id, u.username, u.password_hash, u.persona_id, u.perfil_id, p.primer_nombre || ' ' || p.primer_apellido AS nombre, pf.nombre_perfil AS rol FROM usuario u JOIN persona p ON p.id = u.persona_id JOIN perfil pf ON pf.id = u.perfil_id WHERE u.username = $1 AND u.activo = true"
-}

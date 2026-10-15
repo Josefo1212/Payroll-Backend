@@ -1,0 +1,16 @@
+# Consultas SQL del sistema de nómina.
+# Parámetros con $1, $2... (nunca concatenar texto de usuario).
+# Se cargan una sola vez al arrancar (ver loader.js).
+
+findUserByUsername: |
+  SELECT u.id, u.username, u.password_hash, u.persona_id,
+         p.primer_nombre || ' ' || p.primer_apellido AS nombre,
+         (SELECT pf.nombre_perfil
+            FROM usuario_perfil up
+            JOIN perfil pf ON pf.id = up.perfil_id
+           WHERE up.usuario_id = u.id AND pf.activo = true
+           ORDER BY pf.id
+           LIMIT 1) AS rol
+  FROM usuario u
+  JOIN persona p ON p.id = u.persona_id
+  WHERE u.username = $1 AND u.activo = true
