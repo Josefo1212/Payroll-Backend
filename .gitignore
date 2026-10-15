@@ -35,3 +35,7 @@ temp/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Documentación IA y configuración de herramientas (no versionadas por ahora)
+docs/
+.opencode/
