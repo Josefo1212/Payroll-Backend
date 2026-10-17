@@ -1,4 +1,4 @@
-import { pool } from "../src/config/database.js";
+import { pool } from "../config/database.js";
 
 // Componente único de acceso a datos. Los objetos de negocio y los servicios
 // no usan el pool suelto: pasan por acá para tener el mismo manejo de errores

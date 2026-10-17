@@ -1,4 +1,4 @@
-import { db } from "../../db/Database.js";
+import { db } from "../database/Database.js";
 import { queries } from "../queries/loader.js";
 
 export const authenticateUser = async (username, password) => {
