@@ -1,5 +1,5 @@
-import { db } from "../src/database/Database.js";
-import { queries } from "../src/queries/loader.js";
+import { db } from "../database/Database.js";
+import { queries } from "../queries/loader.js";
 
 // Objeto de seguridad: resuelve los permisos en memoria (O(1) por petición) y
 // despacha los métodos de negocio por reflexión. Los mapas se cargan una vez
@@ -66,6 +66,34 @@ class Security {
     } else {
       this.PermissionOptionMap.delete(llave);
     }
+  };
+
+  // Primer paso, innegociable: validar la forma antes de tocar permisos o
+  // cargar archivos. Los tres nombres deben ser alfanuméricos (se usan para
+  // armar la llave del mapa y la ruta del objeto de negocio) y `params` debe
+  // ser un arreglo. Devuelve { status, body }.
+  executeMethod = async (jsonData, session) => {
+    const { subsystem, class: clase, method, params } = jsonData ?? {};
+
+    const esNombreValido = (valor) =>
+      typeof valor === "string" && /^[A-Za-z0-9]+$/.test(valor);
+
+    if (
+      !esNombreValido(subsystem) ||
+      !esNombreValido(clase) ||
+      !esNombreValido(method) ||
+      !Array.isArray(params)
+    ) {
+      return {
+        status: 400,
+        body: {
+          error:
+            "Solicitud inválida: subsystem, class y method deben ser alfanuméricos y params un arreglo.",
+        },
+      };
+    }
+
+    return { status: 501, body: { error: "Método no implementado." } };
   };
 }
 
