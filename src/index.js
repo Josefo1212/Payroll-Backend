@@ -1,5 +1,5 @@
 import app from './app.js';
-import { dbService } from "./services/databaseService.js";
+import { db } from "../db/Database.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -11,7 +11,7 @@ const startServer = async () => {
   const shutdown = async (signal) => {
     console.log(`Received ${signal}. Closing server...`);
     server.close(async () => {
-      await dbService.pool.end();
+      await db.pool.end();
       process.exit(0);
     });
   };
