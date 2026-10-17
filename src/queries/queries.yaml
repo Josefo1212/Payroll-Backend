@@ -4,64 +4,67 @@
 
 # --- Permisos (mapas en memoria) ---------------------------------------
 
-# Una fila por permiso de método. La llave del mapa se arma en Security.js
-# como `Subsistema_Clase_metodo_perfilId`. Solo filas activas de toda la
-# cadena: un método, clase, subsistema o perfil inactivo no autoriza.
+# Una fila por permiso de método. La llave se arma en Security.js como
+# `Subsistema_Clase_metodo_perfilId`. Cada salto pega a una PK
+# (permiso_metodo, metodo, clase, subsistema), así que no necesita índices
+# extra. El JOIN a perfil solo sirve para descartar perfiles inactivos.
 loadPermissionMethods: |
   SELECT s.nombre AS subsistema,
          c.nombre AS clase,
          m.nombre AS metodo,
-         pm.perfil_id AS perfil_id
+         pm.perfil_id
   FROM permiso_metodo pm
   JOIN metodo m ON m.id = pm.metodo_id
   JOIN clase c ON c.id = m.clase_id
   JOIN subsistema s ON s.id = c.subsistema_id
   JOIN perfil pf ON pf.id = pm.perfil_id
-  WHERE m.activo = true AND c.activo = true
-    AND s.activo = true AND pf.activo = true
+  WHERE m.activo AND c.activo AND s.activo AND pf.activo
 
-# Una fila por permiso de opción (lo que el usuario VE). La llave es
-# `Subsistema_opcion_perfilId` y el valor guarda los datos de la opción.
+# Una fila por permiso de opción (lo que el usuario VE). Llave
+# `Subsistema_opcion_perfilId`; el valor guarda id, orden y descripción.
 loadPermissionOptions: |
   SELECT s.nombre AS subsistema,
          o.id AS opcion_id,
          o.nombre AS opcion,
-         o.orden AS orden,
-         o.descripcion AS descripcion,
-         po.perfil_id AS perfil_id
+         o.orden,
+         o.descripcion,
+         po.perfil_id
   FROM permiso_opcion po
   JOIN opcion o ON o.id = po.opcion_id
   JOIN subsistema s ON s.id = o.subsistema_id
   JOIN perfil pf ON pf.id = po.perfil_id
-  WHERE o.activo = true AND s.activo = true AND pf.activo = true
+  WHERE o.activo AND s.activo AND pf.activo
 
 # --- Login --------------------------------------------------------------
 
-# Sin filtrar por Activo: el servicio decide. Devuelve lo necesario para
-# comparar la clave (bcrypt) y evaluar el bloqueo por intentos.
+# Búsqueda por el índice único de Usuario.Username (no hay escaneo).
+# Sin filtrar por Activo a propósito: el servicio decide qué hacer con una
+# cuenta inactiva. concat_ws ignora nulos si algún día un nombre lo fuera.
 findUserByUsername: |
   SELECT u.id, u.username, u.password_hash, u.persona_id,
-         p.primer_nombre || ' ' || p.primer_apellido AS nombre,
+         concat_ws(' ', p.primer_nombre, p.primer_apellido) AS nombre,
          u.activo, u.intentos_fallidos, u.bloqueado_hasta
   FROM usuario u
   JOIN persona p ON p.id = u.persona_id
   WHERE u.username = $1
 
-# Los perfiles (activos) del usuario; son los que autorizan en los mapas.
+# Perfiles activos del usuario; son los que autorizan en los mapas.
+# La PK (Usuario_id, Perfil_id) cubre el filtro por Usuario_id.
 findProfilesByUserId: |
   SELECT up.perfil_id
   FROM usuario_perfil up
   JOIN perfil pf ON pf.id = up.perfil_id
-  WHERE up.usuario_id = $1 AND pf.activo = true
+  WHERE up.usuario_id = $1 AND pf.activo
   ORDER BY up.perfil_id
 
-# Suma un intento fallido y, al alcanzar $3 (máximo), fija el bloqueo por $2.
-# El contador se calcula en la base para evitar la carrera entre peticiones.
+# Suma un intento fallido y, al llegar a $3 (máximo), bloquea por $2 minutos.
+# El contador se calcula en la base (no en memoria): dos intentos simultáneos
+# no se pisan. make_interval recibe minutos, la unidad del config.
 registerFailedAttempt: |
   UPDATE usuario
      SET intentos_fallidos = intentos_fallidos + 1,
          bloqueado_hasta = CASE
-             WHEN intentos_fallidos + 1 >= $3 THEN NOW() + $2::interval
+             WHEN intentos_fallidos + 1 >= $3 THEN NOW() + make_interval(mins => $2)
              ELSE bloqueado_hasta
          END,
          updated_at = NOW()
@@ -79,19 +82,15 @@ resetAttemptsAndAccess: |
 
 # --- Registro -----------------------------------------------------------
 
-# Detección de duplicados de persona. Si $2 (email) es NULL, la comparación
-# `email = NULL` nunca es cierta: solo mira la cédula.
-findPersonaByCedulaOEmail: |
-  SELECT id, cedula, email
-  FROM persona
-  WHERE cedula = $1 OR email = $2
-  LIMIT 1
+# Detección de duplicados sin traer filas: cada EXISTS pega al índice único
+# correspondiente (Persona.Cedula, Persona.Email). Si $2 es NULL, `email = NULL`
+# nunca es cierto y esa bandera queda en false.
+existePersona: |
+  SELECT EXISTS (SELECT 1 FROM persona WHERE cedula = $1) AS cedula,
+         EXISTS (SELECT 1 FROM persona WHERE email = $2) AS email
 
-findUsuarioByUsername: |
-  SELECT id, username
-  FROM usuario
-  WHERE username = $1
-  LIMIT 1
+existeUsuario: |
+  SELECT EXISTS (SELECT 1 FROM usuario WHERE username = $1) AS username
 
 insertPersona: |
   INSERT INTO persona
