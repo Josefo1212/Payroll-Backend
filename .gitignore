@@ -42,3 +42,5 @@ docs/
 
 # Markdown (AGENTS, MEMORY, specs, skills): solo local para desarrollo
 *.md
+
+specs/
