@@ -39,3 +39,6 @@ Thumbs.db
 # Documentación IA y configuración de herramientas (no versionadas por ahora)
 docs/
 .opencode/
+
+# Markdown (AGENTS, MEMORY, specs, skills): solo local para desarrollo
+*.md
