@@ -1,9 +1,17 @@
 import app from './app.js';
 import { db } from "./database/Database.js";
+import { security } from "./security/Security.js";
 
 const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
+  try {
+    await security.loadPermission();
+  } catch (error) {
+    console.error("Fallo al cargar permisos. El servidor no arranca:", error);
+    process.exit(1);
+  }
+
   const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
