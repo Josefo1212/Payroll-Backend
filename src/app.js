@@ -3,6 +3,7 @@ import session from "express-session";
 import cors from "cors";
 import dotenv from "dotenv";
 import authRoutes from "./routes/authRoutes.js";
+import executeRoutes from "./routes/executeRoutes.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 
 dotenv.config();
@@ -22,11 +23,14 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     secure: false,
+    httpOnly: true,
+    sameSite: "lax",
     maxAge: 1000 * 60 * 60 * 24 
   }
 }));
 
 app.use(authRoutes);
+app.use(executeRoutes);
 
 export { requireAuth };
 export default app;

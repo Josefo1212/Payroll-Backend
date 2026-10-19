@@ -2,6 +2,13 @@ import { db } from "../database/Database.js";
 import { queries } from "../queries/loader.js";
 import { ErrorNegocio } from "../errors/ErrorNegocio.js";
 
+// Los archivos de BO llevan nombre en inglés, pero la Clase en la base y en
+// el sobre del cliente conserva el suyo. El mapa traduce `Subsistema/Clase`
+// al archivo real: sin carpetas por subsistema la ruta no se puede derivar.
+const ARCHIVOS_BO = {
+  "Seguridad/Usuario": "UserBO",
+};
+
 // Objeto de seguridad: resuelve los permisos en memoria (O(1) por petición) y
 // despacha los métodos de negocio por reflexión. Los mapas se cargan una vez
 // al arrancar con loadPermission() y se reemplazan de una vez: nunca quedan a
@@ -115,15 +122,23 @@ class Security {
       };
     }
 
-    // 3. Reflexión. La ruta se arma solo con nombres ya validados por el
-    //    regex; la clase se cachea por `Subsistema/Clase`.
+    // 3. Reflexión. El archivo sale de la lista blanca ARCHIVOS_BO (nunca del
+    //    nombre crudo del cliente); la clase se cachea por `Subsistema/Clase`.
     const llaveClase = `${subsystem}/${clase}`;
     let Clase = this.ClaseCache.get(llaveClase);
 
     if (!Clase) {
+      const archivo = ARCHIVOS_BO[llaveClase];
+      if (!archivo) {
+        return {
+          status: 501,
+          body: { error: "Objeto de negocio no encontrado." },
+        };
+      }
+
       try {
         const modulo = await import(
-          new URL(`../../bo/${subsystem}/${clase}.js`, import.meta.url)
+          new URL(`../bo/${archivo}.js`, import.meta.url)
         );
         Clase = modulo[clase];
       } catch (error) {

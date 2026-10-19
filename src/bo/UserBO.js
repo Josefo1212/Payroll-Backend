@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
-import { queries } from "../../src/queries/loader.js";
-import { ErrorNegocio } from "../../src/errors/ErrorNegocio.js";
+import { queries } from "../queries/loader.js";
+import { ErrorNegocio } from "../errors/ErrorNegocio.js";
 
 // Objeto de negocio del subsistema Seguridad. Los métodos van en el
 // prototipo (método normal, no función flecha): executeMethod los busca

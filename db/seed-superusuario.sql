@@ -1,6 +1,7 @@
 -- Perfil de superusuario y su asignación al usuario de prueba.
--- Correr DESPUÉS de db/migrations/001_esquema_seguridad.sql
+-- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql
 -- (Usuario ya no tiene Perfil_id; los perfiles viven en Usuario_Perfil).
+-- El usuario admin_prueba y su clave bcrypt los crea db/seed-login.sql.
 -- Idempotente: se puede correr varias veces sin duplicar datos.
 --
 -- Nota: el perfil todavía NO tiene permisos (Permiso_Metodo/Permiso_Opcion);

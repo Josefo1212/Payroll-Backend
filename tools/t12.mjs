@@ -1,12 +1,16 @@
-// T12: registrar crea Persona+Usuario y duplicado no deja filas
+// T12: registrar crea Persona + Usuario (clave hasheada, debe cambiar clave),
+// rechaza obligatorios faltantes y no deja filas con datos duplicados.
 import { security } from "../src/security/Security.js";
 import { db } from "../src/database/Database.js";
+
+const CED = "T12-001";
+const USER = "t12_001";
 
 await security.loadPermission();
 
 const superu = { userID: 1, userName: "admin_prueba", profiles: [2] };
 const datos = {
-  cedula: "T12-001",
+  cedula: CED,
   primer_nombre: "Test",
   primer_apellido: "T12",
   segundo_nombre: null,
@@ -18,30 +22,70 @@ const datos = {
   email: "t12_001@example.com",
   direccion: null,
   rif: null,
-  username: "t12_001",
-  password: "123456"
+  username: USER,
+  password: "123456",
 };
 
-const r1 = await security.executeMethod({ subsystem: "Seguridad", class: "Usuario", method: "registrar", params: [datos] }, superu);
-console.log("r1:", r1.status, r1.body);
+const casos = [];
+const check = (nombre, actual, esperado) => casos.push({ nombre, actual, esperado });
+const contar = async (tabla, columna, valor) =>
+  (await db.query(`SELECT count(*)::int AS n FROM ${tabla} WHERE ${columna} = $1`, [valor]))
+    .rows[0].n;
+const limpiar = async () => {
+  await db.query("DELETE FROM usuario WHERE username = $1", [USER]);
+  await db.query("DELETE FROM persona WHERE cedula = $1", [CED]);
+};
 
-// contar filas
-const cp = await db.query("SELECT count(*) FROM persona WHERE cedula='T12-001'");
-const cu = await db.query("SELECT count(*) FROM usuario WHERE username='t12_001'");
-console.log("counts1:", cp.rows[0].count, cu.rows[0].count);
+await limpiar();
 
-// intento duplicado
 try {
-  const r2 = await security.executeMethod({ subsystem: "Seguridad", class: "Usuario", method: "registrar", params: [datos] }, superu);
-  console.log("r2:", r2.status, r2.body);
-} catch (e) {
-  console.log("err2");
+  const faltan = await security.executeMethod(
+    {
+      subsystem: "Seguridad",
+      class: "Usuario",
+      method: "registrar",
+      params: [{ cedula: CED }],
+    },
+    superu,
+  );
+  check("400 faltan obligatorios", faltan.status, 400);
+  check("400 no crea persona", await contar("persona", "cedula", CED), 0);
+
+  const r1 = await security.executeMethod(
+    { subsystem: "Seguridad", class: "Usuario", method: "registrar", params: [datos] },
+    superu,
+  );
+  check("200 registra", r1.status, 200);
+  check("una persona", await contar("persona", "cedula", CED), 1);
+  check("un usuario", await contar("usuario", "username", USER), 1);
+
+  const usuario = (
+    await db.query(
+      "SELECT password_hash, debe_cambiar_clave FROM usuario WHERE username = $1",
+      [USER],
+    )
+  ).rows[0];
+  check("clave hasheada", Boolean(usuario?.password_hash?.startsWith("$2")), true);
+  check("clave no queda en texto plano", usuario?.password_hash === datos.password, false);
+  check("debe cambiar clave", usuario?.debe_cambiar_clave, true);
+
+  const r2 = await security.executeMethod(
+    { subsystem: "Seguridad", class: "Usuario", method: "registrar", params: [datos] },
+    superu,
+  );
+  check("409 duplicado", r2.status, 409);
+} finally {
+  await limpiar();
 }
 
-// limpiar (idempotente no requerido; solo para no ensuciar)
-await db.query("DELETE FROM usuario WHERE username='t12_001'");
-await db.query("DELETE FROM persona WHERE cedula='T12-001'");
-const cp2 = await db.query("SELECT count(*) FROM persona WHERE cedula='T12-001'");
-const cu2 = await db.query("SELECT count(*) FROM usuario WHERE username='t12_001'");
-console.log("counts2:", cp2.rows[0].count, cu2.rows[0].count);
+check("sin residuos persona", await contar("persona", "cedula", CED), 0);
+check("sin residuos usuario", await contar("usuario", "username", USER), 0);
+
+console.table(casos);
+const fallidos = casos.filter((caso) => caso.actual !== caso.esperado);
+if (fallidos.length > 0) {
+  console.error("FALLARON:", fallidos);
+  process.exit(1);
+}
+console.log("T12 OK");
 process.exit(0);

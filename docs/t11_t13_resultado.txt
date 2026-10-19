@@ -1,12 +1,18 @@
-T13 OK (verificado con tools/t13f.mjs):
-- Login correcto con bcrypt: OK (resetAttemptsAndAccess limpia intentos y pone último acceso)
-- Clave incorrecta: incrementa intentos_fallidos (RF-14 registrado)
-- Al alcanzar el máximo (MAX_INTENTOS_FALLIDOS=5) se bloquea (bloqueado_hasta futuro) y login con clave correcta devuelve ErrorNegocio 423 mientras esté bloqueado
-- Tras desbloquear, login correcto funciona y resetea intentos
+// T13 — resultado real (tools/t13f.mjs, con aserciones)
 
-T11: forma (400), permiso (403), reflexión (501 clase/metodo), exclusión de constructor/toString/__proto__ conforme a Security.
+T13 OK:
+- Login correcto con bcrypt: devuelve usuario y resetea intentos/ultimo acceso.
+- Clave incorrecta: incrementa intentos_fallidos (RF-14 queda en el log).
+- Al llegar al maximo (MAX_INTENTOS_FALLIDOS = 5): bloquea 15 min
+  (Bloqueado_hasta en TIMESTAMPTZ) y con clave correcta responde 423.
+- Al vencer el bloqueo: el login correcto funciona y resetea el contador.
 
-T12: registrar crea Persona+Usuario en transacción, duplicado devuelve 409, intento fallido no deja filas residuales (ROLLBACK). 
+Correcciones aplicadas:
+- db/migrations/003_zona_horaria_seguridad.sql: Bloqueado_hasta y
+  Ultimo_acceso pasan a TIMESTAMPTZ. Antes, con la sesion de Neon en GMT y
+  Node en America/Caracas, el bloqueo duraba ~4 h en vez de 15 min.
+- admin_prueba tenia la clave en texto plano; ahora es un hash bcrypt
+  (db/seed-login.sql) y el login HTTP responde 200.
 
-Archivos creados: tools/t11r.mjs, tools/t12.mjs, tools/t13f.mjs, docs/t11_t12_resultado.txt. 
-Tareas T11–T13 documentadas.
+T11: ver docs/t11_t12_resultado.txt.
+T12: ver docs/t11_t12_resultado.txt.

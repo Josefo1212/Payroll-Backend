@@ -1,10 +1,19 @@
-// T12 resultado
-T12 OK:
-- r1: 200 -> crea Persona+Usuario (transacción)
-- counts1: 1 1
-- r2: 409 (duplicado)
-- counts2: 0 0 (sin filas residuales tras intento fallido)
+// T11 y T12 — resultados reales (scripts con aserciones)
 
-T11: forma 400 (subsys/class/method inválidos, params no array, __proto__), 403 sin permiso, 501 clase/metodo inexistentes no se alcanzan cuando no hay permiso o bien → 403 por permiso primero (orden: forma→permiso→reflexión→ejecución). constructor/toString no pasan hasOwnProperty (excluidos). 
+T11 OK (tools/t11r.mjs):
+- 400: subsystem/class/method con "_" y params que no es arreglo.
+- 403: perfil sin permiso.
+- 501: clase inexistente, metodo inexistente, constructor y toString.
+  Para llegar a la reflexion se concede el permiso en memoria con
+  setPermissionMethod; el orden forma -> permiso -> reflexion -> ejecucion
+  se respeta (sin permiso, esos casos dan 403).
+- __proto__ lo corta el regex de forma (400).
 
-Comprobado con tools/t11r.mjs, tools/t12.mjs.
+T12 OK (tools/t12.mjs):
+- r1: 200 -> crea Persona + Usuario en una transaccion.
+- counts1: 1 1.
+- r2: 409 (duplicado).
+- counts2: 0 0 (sin filas residuales; ROLLBACK).
+
+Nota: el primer test manual de T8 dejo una fila (t8chk_001) por abortar antes
+de limpiar; se elimino. La base queda con el unico usuario de prueba.
