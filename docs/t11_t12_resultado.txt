@@ -1,0 +1,10 @@
+// T12 resultado
+T12 OK:
+- r1: 200 -> crea Persona+Usuario (transacción)
+- counts1: 1 1
+- r2: 409 (duplicado)
+- counts2: 0 0 (sin filas residuales tras intento fallido)
+
+T11: forma 400 (subsys/class/method inválidos, params no array, __proto__), 403 sin permiso, 501 clase/metodo inexistentes no se alcanzan cuando no hay permiso o bien → 403 por permiso primero (orden: forma→permiso→reflexión→ejecución). constructor/toString no pasan hasOwnProperty (excluidos). 
+
+Comprobado con tools/t11r.mjs, tools/t12.mjs.

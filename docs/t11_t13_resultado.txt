@@ -1,0 +1,12 @@
+T13 OK (verificado con tools/t13f.mjs):
+- Login correcto con bcrypt: OK (resetAttemptsAndAccess limpia intentos y pone último acceso)
+- Clave incorrecta: incrementa intentos_fallidos (RF-14 registrado)
+- Al alcanzar el máximo (MAX_INTENTOS_FALLIDOS=5) se bloquea (bloqueado_hasta futuro) y login con clave correcta devuelve ErrorNegocio 423 mientras esté bloqueado
+- Tras desbloquear, login correcto funciona y resetea intentos
+
+T11: forma (400), permiso (403), reflexión (501 clase/metodo), exclusión de constructor/toString/__proto__ conforme a Security.
+
+T12: registrar crea Persona+Usuario en transacción, duplicado devuelve 409, intento fallido no deja filas residuales (ROLLBACK). 
+
+Archivos creados: tools/t11r.mjs, tools/t12.mjs, tools/t13f.mjs, docs/t11_t12_resultado.txt. 
+Tareas T11–T13 documentadas.
