@@ -5,6 +5,15 @@ import dotenv from "dotenv";
 import { security } from "./security/Security.js";
 
 dotenv.config();
+
+const esProduccion = process.env.NODE_ENV === "production";
+
+// En producción el secreto de sesión es obligatorio: firmar con uno por
+// defecto permite falsificar cookies. En desarrollo se admite uno local.
+if (esProduccion && !process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET es obligatoria en producción.");
+}
+
 const app = express();
 
 app.use(express.json());
@@ -16,13 +25,16 @@ app.use(cors({
 
 // express-session configuration
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'secreto_por_defecto',
+  name: "connect.sid",
+  secret: process.env.SESSION_SECRET || "secreto_solo_desarrollo",
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,
-    maxAge: 1000 * 60 * 60 * 24 
-  }
+    httpOnly: true,
+    sameSite: "lax",
+    secure: esProduccion,
+    maxAge: 1000 * 60 * 60 * 24,
+  },
 }));
 
 // Endpoint único: todo el sistema se invoca por acá ({ subsystem, class,
