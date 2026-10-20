@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { db } from "../database/Database.js";
 import { queries } from "../queries/loader.js";
 import { ErrorNegocio } from "../errors/ErrorNegocio.js";
@@ -14,6 +15,25 @@ const BO_DIR_POR_DEFECTO = fileURLToPath(new URL("../../bo", import.meta.url));
 // el directorio real con fs: el cliente nunca elige rutas, solo se importan
 // archivos que existían en bo/ en el último descubrimiento.
 const NOMBRE_VALIDO = /^[A-Za-z0-9]+$/;
+
+// Node formatea ERR_MODULE_NOT_FOUND como:
+//   Cannot find module '<specifier>' imported from <parent>
+// Extrae el specifier del módulo que no se encontró. Si no se puede leer,
+// devuelve null.
+const moduloFaltante = (error) => {
+  const coincidencia = /Cannot find module '([^']+)'/.exec(error?.message ?? "");
+  return coincidencia ? coincidencia[1] : null;
+};
+
+// ¿El módulo que no se encontró ES el archivo del BO (y no un import roto
+// dentro de él)? Compara por ruta absoluta y por URL file://.
+const faltaElBo = (error, ruta) => {
+  const faltante = moduloFaltante(error);
+  if (faltante == null) {
+    return false;
+  }
+  return faltante === ruta || faltante === pathToFileURL(ruta).href;
+};
 
 // Objeto de seguridad: resuelve los permisos en memoria (O(1) por petición) y
 // despacha los métodos de negocio por reflexión. Los mapas se cargan una vez
@@ -68,7 +88,7 @@ class Security {
 
       let archivos;
       try {
-        archivos = readdirSync(`${this.boDir}/${subsistema.name}`, { withFileTypes: true });
+        archivos = readdirSync(join(this.boDir, subsistema.name), { withFileTypes: true });
       } catch {
         continue;
       }
@@ -84,7 +104,7 @@ class Security {
 
         nuevoMapa.set(
           `${subsistema.name}/${clase}`,
-          `${this.boDir}/${subsistema.name}/${archivo.name}`,
+          join(this.boDir, subsistema.name, archivo.name),
         );
       }
     }
@@ -265,13 +285,16 @@ class Security {
       }
 
       try {
-        const modulo = await import(ruta);
+        // pathToFileURL(ruta).href es la forma portable (también en Windows):
+        // import() de una ruta cruda con letra de unidad falla como URL.
+        const modulo = await import(pathToFileURL(ruta).href);
         // El archivo debe exportar la clase con el mismo nombre que el archivo.
         Clase = modulo[clase];
       } catch (error) {
-        // Solo "archivo no encontrado" es 501; un error de sintaxis debe
-        // verse, no disfrazarse de método inexistente.
-        if (error?.code !== "ERR_MODULE_NOT_FOUND") {
+        // Solo es 501 si falta el archivo del BO. Si el módulo no encontrado
+        // es otro (un import roto DENTRO del BO), se propaga para que se vea
+        // como error del servidor, no como "método inexistente".
+        if (error?.code !== "ERR_MODULE_NOT_FOUND" || !faltaElBo(error, ruta)) {
           throw error;
         }
         Clase = undefined;

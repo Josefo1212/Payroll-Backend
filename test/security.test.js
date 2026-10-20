@@ -2,7 +2,8 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Security } from "../src/security/Security.js";
 import { crearDbFalso, crearReq } from "./helpers.js";
 
@@ -78,6 +79,43 @@ test("una clase fuera de bo/ da 501", async () => {
     crearReq({ userID: 1, profiles: [1] }),
   );
   assert.equal(status, 501);
+});
+
+test("refreshBo guarda rutas válidas y se importan vía pathToFileURL", async () => {
+  const s = new Security(dbFalso, { boDir: raiz });
+  const ruta = s.BoMap.get("Demo/Saludo");
+
+  // Ruta absoluta construida con node:path (portable, sin "/" concatenados).
+  assert.equal(isAbsolute(ruta), true);
+  assert.equal(ruta, join(raiz, "Demo", "Saludo.js"));
+
+  // import(pathToFileURL(ruta).href) carga el BO temporal sin problemas.
+  const modulo = await import(pathToFileURL(ruta).href);
+  assert.equal(typeof modulo.Saludo, "function");
+});
+
+test("un import roto dentro del BO se propaga (no es 501)", async () => {
+  writeFileSync(
+    join(raiz, "Demo", "Roto.js"),
+    `import { noExiste } from "./no-esta.js";\nexport class Roto { hola() {} }`,
+  );
+
+  const s = new Security(dbFalso, { boDir: raiz });
+  s.setPermissionMethod("Demo", "Roto", "hola", 1);
+
+  // El módulo que falta es el import interno, no el archivo del BO: debe
+  // propagarse para verse como 500 en el handler de errores.
+  await assert.rejects(
+    () =>
+      s.executeMethod(
+        { subsystem: "Demo", class: "Roto", method: "hola", params: [] },
+        crearReq({ userID: 1, profiles: [1] }),
+      ),
+    (error) => error?.code === "ERR_MODULE_NOT_FOUND",
+  );
+
+  rmSync(join(raiz, "Demo", "Roto.js"));
+  s.refreshBo();
 });
 
 test("refreshBo descubre un BO nuevo sin reiniciar", async () => {
