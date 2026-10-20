@@ -72,7 +72,9 @@ ON CONFLICT (nombre_perfil) DO NOTHING;
 INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
-JOIN clase c ON c.nombre = 'Sesion'
+JOIN clase c
+  ON c.nombre = 'Sesion'
+ AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre IN ('login', 'logout', 'sessionExist', 'getSession')
@@ -83,18 +85,44 @@ ON CONFLICT DO NOTHING;
 INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
-JOIN clase c ON c.nombre = 'Menu'
+JOIN clase c
+  ON c.nombre = 'Menu'
+ AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre = 'getOptions'
 ON CONFLICT DO NOTHING;
 
--- Superusuario: permiso a TODOS los métodos (logout y admin incluidos).
+-- Superusuario: permiso a TODOS los métodos de Seguridad (logout y admin
+-- incluidos).
 INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
-JOIN clase c ON c.nombre IN ('Sesion', 'Menu', 'Admin')
+JOIN clase c
+  ON c.nombre IN ('Sesion', 'Menu', 'Admin')
+ AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
 JOIN metodo m ON m.clase_id = c.id
+WHERE pf.nombre_perfil = 'Superusuario'
+ON CONFLICT DO NOTHING;
+
+-- Opciones de ejemplo del subsistema Seguridad: lo que el menú muestra. Sus
+-- permisos se asignan a Superusuario para que Menu.getOptions no devuelva []
+-- tras el login de admin_prueba.
+INSERT INTO opcion (subsistema_id, nombre, descripcion, orden)
+SELECT s.id, o.nombre, o.descripcion, o.orden
+FROM subsistema s
+CROSS JOIN (VALUES
+    ('Usuarios', 'Gestión de usuarios', 1),
+    ('Perfiles', 'Gestión de perfiles y permisos', 2)
+) AS o(nombre, descripcion, orden)
+WHERE s.nombre = 'Seguridad'
+ON CONFLICT (subsistema_id, nombre) DO NOTHING;
+
+INSERT INTO permiso_opcion (perfil_id, opcion_id)
+SELECT pf.id, o.id
+FROM perfil pf
+JOIN opcion o
+  ON o.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
 WHERE pf.nombre_perfil = 'Superusuario'
 ON CONFLICT DO NOTHING;
 
