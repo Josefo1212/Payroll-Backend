@@ -1,0 +1,125 @@
+DESPLIEGUE DEL BACKEND DE NÓMINA
+===============================
+
+Este documento explica cómo preparar la base de datos y cómo agregar un nuevo
+objeto de negocio (BO) al endpoint único POST /api/execute.
+
+
+1. ORDEN DE DESPLIEGUE DE LA BASE DE DATOS
+------------------------------------------
+
+Los archivos se aplican en este orden (todos en db/):
+
+  1. db/migrations/001_init.sql                  tablas base
+  2. db/migrations/002_esquema_seguridad.sql     esquema de seguridad
+  3. db/migrations/003_zona_horaria_seguridad.sql timestamptz en seguridad
+  4. db/seed-seguridad.sql                       subsistema, clases, métodos,
+                                                 perfiles, permisos y opciones
+  5. db/seed-login.sql                           usuario de prueba (SOLO dev)
+  6. db/seed-superusuario.sql                    asigna el usuario de prueba
+                                                 al perfil Superusuario (dev)
+
+Los seeds de los pasos 5 y 6 crean el usuario admin_prueba con la clave
+conocida Password123: son SOLO para desarrollo y nunca deben aplicarse en
+producción.
+
+Las migraciones se saltan si el esquema ya está aplicado, y los seeds usan
+ON CONFLICT, así que se puede correr todo varias veces sobre la misma base.
+
+
+2. USO DE scripts/db-setup.sh
+-----------------------------
+
+El script aplica migraciones y seeds en el orden de arriba. La conexión sale
+de DATABASE_URL (no lleva credenciales).
+
+  # Migraciones + seed-seguridad (sin usuario de prueba):
+  DATABASE_URL=postgresql://usuario:clave@host:5432/base ./scripts/db-setup.sh
+
+  # Además el usuario de prueba admin_prueba/Password123 (solo desarrollo):
+  DATABASE_URL=postgresql://usuario:clave@host:5432/base ./scripts/db-setup.sh --with-test-user
+
+Comportamiento:
+
+  - Aborta si NODE_ENV=production (nunca toca producción).
+  - Sin --with-test-user omite seed-login.sql y seed-superusuario.sql.
+  - Si el esquema base ya está aplicado (existen las tablas `perfil` y
+    `subsistema`), salta 001 y 002. Si Bloqueado_hasta ya es timestamptz,
+    salta 003. Imprime qué archivos aplicó y cuáles saltó.
+
+También existe `scripts/hash-password.js` para regenerar el hash bcrypt de una
+clave:
+
+  node scripts/hash-password.js "NuevaClave123"
+
+
+3. CÓMO AGREGAR UN OBJETO DE NEGOCIO NUEVO
+------------------------------------------
+
+El endpoint POST /api/execute despacha por reflexión a los BO descubiertos en
+bo/. No hay que registrar nada en el código: alcanza con seguir estos pasos.
+
+  a) Crear el archivo bo/<Subsistema>/<Clase>.js y exportar la clase con el
+     MISMO nombre que el archivo (nombres alfanuméricos, sin guiones):
+
+       // bo/Demo/Saludo.js
+       export class Saludo {
+         // Recibe (db, req); la sesión se lee de req.session.
+         constructor(db, req) { this.db = db; this.req = req; }
+
+         // Solo los métodos propios del prototipo son despachables.
+         hola(nombre) { return "hola " + nombre; }
+       }
+
+     El descubrimiento lee bo/ al arrancar y en cada Admin.reloadPermissions,
+     así que un archivo nuevo se ve sin reiniciar el servidor.
+
+  b) Sembrar en la base el subsistema, la clase, el método y el permiso. El
+     subsistema debe llamarse igual que la carpeta y la clase igual que el
+     archivo. Se puede seguir el patrón de db/seed-seguridad.sql:
+
+       INSERT INTO subsistema (nombre, descripcion)
+       VALUES ('Demo', 'Subsistema de ejemplo')
+       ON CONFLICT (nombre) DO NOTHING;
+
+       INSERT INTO clase (subsistema_id, nombre, descripcion)
+       SELECT s.id, 'Saludo', 'Objeto de negocio de ejemplo'
+       FROM subsistema s WHERE s.nombre = 'Demo'
+       ON CONFLICT (subsistema_id, nombre) DO NOTHING;
+
+       INSERT INTO metodo (clase_id, nombre, descripcion)
+       SELECT c.id, 'hola', 'Devuelve un saludo'
+       FROM clase c
+       WHERE c.nombre = 'Saludo'
+         AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Demo')
+       ON CONFLICT (clase_id, nombre) DO NOTHING;
+
+       -- Permiso del método para un perfil (p. ej. 'Superusuario').
+       INSERT INTO permiso_metodo (perfil_id, metodo_id)
+       SELECT pf.id, m.id
+       FROM perfil pf
+       JOIN clase c ON c.nombre = 'Saludo'
+       JOIN metodo m ON m.clase_id = c.id AND m.nombre = 'hola'
+       WHERE pf.nombre_perfil = 'Superusuario'
+       ON CONFLICT DO NOTHING;
+
+  c) Aplicar los cambios de permisos sin reiniciar. Hay dos formas:
+
+       - Llamar por el endpoint: POST /api/execute con
+         { "subsystem": "Seguridad", "class": "Admin",
+           "method": "reloadPermissions", "params": [] }
+         (requiere sesión con permiso de Superusuario).
+
+       - Reiniciar el servidor: al arrancar se cargan permisos y se
+         redescubre bo/.
+
+  d) Invocar el BO:
+
+       POST /api/execute
+       { "subsystem": "Demo", "class": "Saludo", "method": "hola",
+         "params": ["Ana"] }
+
+     Respuestas: 200 con el resultado; 400 si la forma es inválida; 401 sin
+     sesión y sin permiso público; 403 con sesión pero sin permiso; 501 si la
+     clase o el método no existen; 500 si el BO tiene un error propio (por
+     ejemplo, un import roto).
