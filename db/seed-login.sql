@@ -1,5 +1,7 @@
--- Usuario temporal para probar POST /api/login.
--- La contraseña está en texto plano solo para pruebas locales.
+-- Usuario temporal para probar el login por POST /api/execute
+-- (subsystem "Seguridad", class "Sesion", method "login").
+-- La contraseña va como hash bcrypt (cost 12), generado con:
+--   node scripts/hash-password.js "Password123"
 
 BEGIN;
 
@@ -23,17 +25,14 @@ ON CONFLICT (cedula) DO NOTHING;
 
 INSERT INTO usuario (
     persona_id,
-    perfil_id,
     username,
     password_hash
 )
 SELECT
     p.id,
-    pf.id,
     'admin_prueba',
-    'Password123'
+    '$2b$12$GqShTrQm552qyROnu2.0PeIGFY04MZngsnfsOyitCmp99L4gIEx2e'
 FROM persona p
-JOIN perfil pf ON pf.nombre_perfil = 'PRUEBA_LOGIN'
 WHERE p.cedula = 'TEST-LOGIN-001'
 ON CONFLICT (username) DO NOTHING;
 
