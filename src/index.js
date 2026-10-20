@@ -5,13 +5,10 @@ import { security } from "./security/Security.js";
 const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
-  // Los permisos deben estar en memoria ANTES de aceptar la primera
-  // petición: sin loadPermission() no hay mapa de permisos y todo saldría
-  // 401/403.
   try {
     await security.loadPermission();
   } catch (error) {
-    console.error("No se pudieron cargar los permisos:", error);
+    console.error("Fallo al cargar permisos. El servidor no arranca:", error);
     process.exit(1);
   }
 

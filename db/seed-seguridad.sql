@@ -1,6 +1,7 @@
--- Seguridad: subsistema, clases Sesion, Menu y Admin, sus métodos y los
--- perfiles 'Publico' y 'Superusuario' con sus permisos de método.
--- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql.
+-- Seguridad: subsistema, clases (Sesion, Menu, Admin, Usuario), sus métodos y
+-- los perfiles 'Publico' y 'Superusuario' con sus permisos.
+-- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql y de
+-- db/seed-superusuario.sql (perfil Superusuario).
 -- Idempotente: se puede correr varias veces sin duplicar datos.
 --
 -- Contraseña del hash de seed-login.sql: Password123
@@ -8,10 +9,21 @@
 
 BEGIN;
 
+-- Seguro: sin perfil Superusuario no tiene sentido el seed.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM perfil WHERE nombre_perfil = 'Superusuario') THEN
+    RAISE EXCEPTION 'Falta el perfil Superusuario. Corre antes db/seed-superusuario.sql.';
+  END IF;
+END $$;
+
 INSERT INTO subsistema (nombre, descripcion)
 VALUES ('Seguridad', 'Autenticación, sesiones y permisos')
 ON CONFLICT (nombre) DO NOTHING;
 
+-- ---------------------------------------------------------------------------
+-- Clase Sesion: autenticación como objeto de negocio.
+-- ---------------------------------------------------------------------------
 INSERT INTO clase (subsistema_id, nombre, descripcion)
 SELECT s.id, 'Sesion', 'Objeto de negocio de autenticación'
 FROM subsistema s
@@ -61,6 +73,24 @@ WHERE c.nombre = 'Admin'
   AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
+-- Clase Usuario: dar de alta usuarios (BO UserBO.registrar).
+INSERT INTO clase (subsistema_id, nombre, descripcion)
+SELECT s.id, 'Usuario', 'Objeto de negocio de usuarios del sistema'
+FROM subsistema s
+WHERE s.nombre = 'Seguridad'
+ON CONFLICT (subsistema_id, nombre) DO NOTHING;
+
+INSERT INTO metodo (clase_id, nombre, descripcion)
+SELECT c.id, 'registrar', 'Registra una persona y su usuario en una transacción'
+FROM clase c
+WHERE c.nombre = 'Usuario'
+  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+ON CONFLICT (clase_id, nombre) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Perfiles y sus permisos.
+-- ---------------------------------------------------------------------------
+
 -- Perfil público: lo usan los visitantes sin sesión (login, sessionExist y
 -- getSession están en la lista blanca del esquema del profe). logout también
 -- va acá: cerrar la propia sesión debe poder hacerlo cualquier perfil, no
@@ -93,27 +123,30 @@ WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre = 'getOptions'
 ON CONFLICT DO NOTHING;
 
--- Superusuario: permiso a TODOS los métodos de Seguridad (logout y admin
--- incluidos).
+-- Superusuario: permiso a TODOS los métodos de Seguridad (logout, admin y
+-- usuario incluidos).
 INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
 JOIN clase c
-  ON c.nombre IN ('Sesion', 'Menu', 'Admin')
+  ON c.nombre IN ('Sesion', 'Menu', 'Admin', 'Usuario')
  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Superusuario'
 ON CONFLICT DO NOTHING;
 
--- Opciones de ejemplo del subsistema Seguridad: lo que el menú muestra. Sus
+-- ---------------------------------------------------------------------------
+-- Opciones de ejemplo del subsistema Seguridad (lo que el menú muestra). Sus
 -- permisos se asignan a Superusuario para que Menu.getOptions no devuelva []
 -- tras el login de admin_prueba.
+-- ---------------------------------------------------------------------------
 INSERT INTO opcion (subsistema_id, nombre, descripcion, orden)
 SELECT s.id, o.nombre, o.descripcion, o.orden
 FROM subsistema s
 CROSS JOIN (VALUES
-    ('Usuarios', 'Gestión de usuarios', 1),
-    ('Perfiles', 'Gestión de perfiles y permisos', 2)
+    ('registrar', 'Registrar un nuevo usuario', 1),
+    ('Usuarios', 'Gestión de usuarios', 2),
+    ('Perfiles', 'Gestión de perfiles y permisos', 3)
 ) AS o(nombre, descripcion, orden)
 WHERE s.nombre = 'Seguridad'
 ON CONFLICT (subsistema_id, nombre) DO NOTHING;

@@ -2,6 +2,17 @@ import { db } from "../database/Database.js";
 import { queries } from "../queries/loader.js";
 import { ErrorNegocio } from "../errors/ErrorNegocio.js";
 
+// Los BO viven en bo/<Subsistema>/<Clase>.js y exportan la clase con el mismo
+// nombre. La lista blanca traduce `Subsistema/Clase` al archivo real: solo se
+// cargan los BO declarados acá, nunca una ruta derivada del nombre que manda
+// el cliente.
+const ARCHIVOS_BO = {
+  "Seguridad/Sesion": { ruta: "../../bo/Seguridad/Sesion.js", exporta: "Sesion" },
+  "Seguridad/Menu": { ruta: "../../bo/Seguridad/Menu.js", exporta: "Menu" },
+  "Seguridad/Admin": { ruta: "../../bo/Seguridad/Admin.js", exporta: "Admin" },
+  "Seguridad/Usuario": { ruta: "../../bo/Seguridad/Usuario.js", exporta: "Usuario" },
+};
+
 // Objeto de seguridad: resuelve los permisos en memoria (O(1) por petición) y
 // despacha los métodos de negocio por reflexión. Los mapas se cargan una vez
 // al arrancar con loadPermission() y se reemplazan de una vez: nunca quedan a
@@ -175,17 +186,23 @@ class Security {
       };
     }
 
-    // 3. Reflexión. La ruta se arma solo con nombres ya validados por el
-    //    regex; la clase se cachea por `Subsistema/Clase`.
+    // 3. Reflexión. El archivo sale de la lista blanca ARCHIVOS_BO (nunca del
+    //    nombre crudo del cliente); la clase se cachea por `Subsistema/Clase`.
     const llaveClase = `${subsystem}/${clase}`;
     let Clase = this.ClaseCache.get(llaveClase);
 
     if (!Clase) {
+      const archivo = ARCHIVOS_BO[llaveClase];
+      if (!archivo) {
+        return {
+          status: 501,
+          body: { error: "Objeto de negocio no encontrado." },
+        };
+      }
+
       try {
-        const modulo = await import(
-          new URL(`../../bo/${subsystem}/${clase}.js`, import.meta.url)
-        );
-        Clase = modulo[clase];
+        const modulo = await import(new URL(archivo.ruta, import.meta.url));
+        Clase = modulo[archivo.exporta];
       } catch (error) {
         // Solo "archivo no encontrado" es 501; un error de sintaxis debe
         // verse, no disfrazarse de método inexistente.

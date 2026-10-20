@@ -1,10 +1,10 @@
 import bcrypt from "bcrypt";
 import { queries } from "../../src/queries/loader.js";
 import { ErrorNegocio } from "../../src/errors/ErrorNegocio.js";
-
-// Máximo de intentos fallidos y minutos de bloqueo (configurables por .env).
-const MAX_INTENTOS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
-const MINUTOS_BLOQUEO = Number(process.env.LOGIN_BLOCK_MINUTES || 15);
+import {
+  MAX_INTENTOS_FALLIDOS as MAX_INTENTOS,
+  MINUTOS_BLOQUEO,
+} from "../../src/config/security.js";
 
 // Pausa uniforme (200–400 ms) solo en los fallos de credenciales, para frenar
 // fuerza bruta. LOGIN_FAIL_DELAY_MS = 0 la desactiva (así corren las pruebas).
