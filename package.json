@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "LOGIN_FAIL_DELAY_MS=0 node --test \"test/**/*.test.js\""
+    "test": "LOGIN_FAIL_DELAY_MS=0 node --test \"test/**/*.test.js\"",
+    "hash-password": "node scripts/hash-password.js"
   },
   "keywords": [],
   "author": "",
