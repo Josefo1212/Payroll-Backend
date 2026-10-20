@@ -37,6 +37,14 @@ loadPermissionOptions: |
 
 # --- Login --------------------------------------------------------------
 
+# Id del perfil 'Publico': sus permisos los tiene cualquier visitante, con o
+# sin sesión. Se carga una vez en loadPermission() y se guarda en la
+# instancia; si el perfil no existe, el id queda en null y no autoriza nada.
+findPublicProfileId: |
+  SELECT id
+  FROM perfil
+  WHERE nombre_perfil = 'Publico' AND activo
+
 # Búsqueda por el índice único de Usuario.Username (no hay escaneo).
 # Sin filtrar por Activo a propósito: el servicio decide qué hacer con una
 # cuenta inactiva. concat_ws ignora nulos si algún día un nombre lo fuera.

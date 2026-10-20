@@ -16,14 +16,19 @@ class Security {
   // Llave `Subsistema/Clase` → la clase del objeto de negocio ya importada.
   ClaseCache = new Map();
 
+  // Id del perfil 'Publico' (null si no existe): sus permisos los tiene
+  // cualquiera, con o sin sesión.
+  PublicProfileId = null;
+
   constructor(conexion) {
     this.db = conexion;
   }
 
   loadPermission = async () => {
-    const [metodos, opciones] = await Promise.all([
+    const [metodos, opciones, publico] = await Promise.all([
       this.db.query(queries.loadPermissionMethods),
       this.db.query(queries.loadPermissionOptions),
+      this.db.query(queries.findPublicProfileId),
     ]);
 
     const mapasMetodos = new Map();
@@ -48,9 +53,11 @@ class Security {
     // Reemplazo atómico: hasta acá se siguen usando los mapas viejos.
     this.PermissionMethodMap = mapasMetodos;
     this.PermissionOptionMap = mapasOpciones;
+    this.PublicProfileId = publico.rows[0]?.id ?? null;
 
     console.log(
-      `Permisos cargados: ${mapasMetodos.size} método(s) y ${mapasOpciones.size} opción(es).`,
+      `Permisos cargados: ${mapasMetodos.size} método(s) y ${mapasOpciones.size} opción(es)` +
+        ` (perfil público: ${this.PublicProfileId ?? "ninguno"}).`,
     );
   };
 
@@ -71,6 +78,11 @@ class Security {
       this.PermissionOptionMap.delete(llave);
     }
   };
+
+  // Consulta de los mapas ya cargados (los pide el esquema del profe).
+  getPermissionMethod = (key) => this.PermissionMethodMap.has(key);
+
+  getPermissionOption = (key) => this.PermissionOptionMap.get(key) ?? null;
 
   // Despacho de un método de negocio. El orden es innegociable:
   // 1) forma, 2) permiso, 3) reflexión y 4) ejecución. Nunca se invierte:
@@ -100,15 +112,31 @@ class Security {
         },
       };
     }
-
-    // 2. Permiso, resuelto en memoria con los perfiles de la sesión. Basta
-    //    con que uno autorice (OR).
+    // 2. Permiso, resuelto en memoria con los perfiles efectivos: los de la
+    //    sesión más el del perfil 'Publico' (si existe), que autoriza a
+    //    cualquiera aunque no haya sesión. Basta con que uno autorice (OR).
     const perfiles = Array.isArray(req?.session?.profiles) ? req.session.profiles : [];
-    const autorizado = perfiles.some((perfilId) =>
+    const perfilesEfectivos =
+      this.PublicProfileId != null && !perfiles.includes(this.PublicProfileId)
+        ? [...perfiles, this.PublicProfileId]
+        : perfiles;
+
+    const autorizado = perfilesEfectivos.some((perfilId) =>
       this.PermissionMethodMap.has(`${subsystem}_${clase}_${method}_${perfilId}`),
     );
 
     if (!autorizado) {
+      // Sin sesión el problema no es el permiso: hay que autenticarse.
+      if (!req?.session?.userID) {
+        console.warn(
+          `401: ${subsystem}/${clase}/${method} sin sesión y sin permiso público.`,
+        );
+        return {
+          status: 401,
+          body: { error: "Debes iniciar sesión." },
+        };
+      }
+
       console.warn(
         `403: ${subsystem}/${clase}/${method} sin permiso para los perfiles [${perfiles}].`,
       );
