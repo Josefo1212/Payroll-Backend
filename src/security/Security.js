@@ -75,8 +75,11 @@ class Security {
   // Despacho de un método de negocio. El orden es innegociable:
   // 1) forma, 2) permiso, 3) reflexión y 4) ejecución. Nunca se invierte:
   // validar el permiso después de la reflexión dejaría que el cliente elija
-  // qué archivo se carga antes de estar autorizado. Devuelve { status, body }.
-  executeMethod = async (jsonData, session) => {
+  // qué archivo se carga antes de estar autorizado. Se recibe `req` completo
+  // (no solo la sesión): express-session reemplaza req.session al hacer
+  // regenerate, y los objetos de negocio construidos acá leen this.req.session
+  // sobre el objeto vivo. Devuelve { status, body }.
+  executeMethod = async (jsonData, req) => {
     const { subsystem, class: clase, method, params } = jsonData ?? {};
 
     const esNombreValido = (valor) =>
@@ -100,7 +103,7 @@ class Security {
 
     // 2. Permiso, resuelto en memoria con los perfiles de la sesión. Basta
     //    con que uno autorice (OR).
-    const perfiles = Array.isArray(session?.profiles) ? session.profiles : [];
+    const perfiles = Array.isArray(req?.session?.profiles) ? req.session.profiles : [];
     const autorizado = perfiles.some((perfilId) =>
       this.PermissionMethodMap.has(`${subsystem}_${clase}_${method}_${perfilId}`),
     );
@@ -159,9 +162,10 @@ class Security {
     }
 
     // 4. Ejecución: el objeto de negocio recibe el componente de BD y la
-    //    sesión. Un ErrorNegocio del BO se traduce a su código; cualquier
-    //    otro error se propaga (no se oculta).
-    const objeto = new Clase(this.db, session);
+    //    petición (de la que lee this.req.session, siempre viva). Un
+    //    ErrorNegocio del BO se traduce a su código; cualquier otro error
+    //    se propaga (no se oculta).
+    const objeto = new Clase(this.db, req);
     try {
       const resultado = await objeto[method](...params);
       return { status: 200, body: resultado };
