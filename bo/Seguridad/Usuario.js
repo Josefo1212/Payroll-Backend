@@ -2,6 +2,36 @@ import bcrypt from "bcrypt";
 import { queries } from "../../src/queries/loader.js";
 import { ErrorNegocio } from "../../src/errors/ErrorNegocio.js";
 
+// Límite duro de bcrypt: por encima de 72 bytes la clave se trunca en
+// silencio, así que se rechaza explícitamente.
+const MAX_BYTES_PASSWORD = 72;
+
+// Política mínima de contraseña: 8+ caracteres, con al menos una letra y un
+// número, y como máximo 72 bytes (UTF-8). Lanza ErrorNegocio 400 con un
+// mensaje claro en el primer requisito incumplido.
+function validarPassword(password) {
+  if (typeof password !== "string" || password.length < 8) {
+    throw new ErrorNegocio(
+      "La contraseña debe tener al menos 8 caracteres.",
+      400,
+    );
+  }
+
+  if (Buffer.byteLength(password, "utf8") > MAX_BYTES_PASSWORD) {
+    throw new ErrorNegocio(
+      "La contraseña no puede superar los 72 bytes.",
+      400,
+    );
+  }
+
+  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    throw new ErrorNegocio(
+      "La contraseña debe incluir al menos una letra y un número.",
+      400,
+    );
+  }
+}
+
 // Objeto de negocio del subsistema Seguridad. Los métodos van en el
 // prototipo (método normal, no función flecha): executeMethod los busca
 // con hasOwnProperty sobre Clase.prototype. Recibe (db, req); la sesión se
@@ -42,6 +72,8 @@ export class Usuario {
         400,
       );
     }
+
+    validarPassword(password);
 
     try {
       return await this.#db.transaction(async (cliente) => {
