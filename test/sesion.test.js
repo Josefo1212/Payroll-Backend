@@ -126,6 +126,19 @@ test("logout sin sesión devuelve { ok: true } sin lanzar", async () => {
   assert.deepEqual(resultado, { ok: true });
 });
 
+test("un error de BD en login no se atrapa: se propaga", async () => {
+  const { bo, dbFalso } = await crearBo();
+  const original = dbFalso.query;
+  dbFalso.query = async (texto, params) => {
+    if (texto === queries.findUserByUsername) {
+      throw new Error("BD caída");
+    }
+    return original(texto, params);
+  };
+
+  await assert.rejects(() => bo.login("admin", "Password123"), /BD caída/);
+});
+
 test("login con credenciales vacías: 400", async () => {
   const { bo } = await crearBo();
 
@@ -151,6 +164,19 @@ test("la contraseña nunca aparece en los logs", async () => {
     registros.some((linea) => linea.includes("SuperSecreta123")),
     false,
   );
+});
+
+test("con LOGIN_FAIL_DELAY_MS=0 un fallo de credenciales es inmediato", async () => {
+  assert.equal(process.env.LOGIN_FAIL_DELAY_MS, "0", "la prueba corre con la pausa desactivada");
+  const { bo } = await crearBo();
+
+  const inicio = Date.now();
+  await assert.rejects(() => bo.login("admin", "incorrecta"), (error) => {
+    assert.equal(error.status, 401);
+    return true;
+  });
+
+  assert.ok(Date.now() - inicio < 150, "no espera la pausa configurable");
 });
 
 test("hash de la clave de prueba corresponde al texto plano", async () => {

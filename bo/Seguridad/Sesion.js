@@ -6,6 +6,20 @@ import { ErrorNegocio } from "../../src/errors/ErrorNegocio.js";
 const MAX_INTENTOS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
 const MINUTOS_BLOQUEO = Number(process.env.LOGIN_BLOCK_MINUTES || 15);
 
+// Pausa uniforme (200–400 ms) solo en los fallos de credenciales, para frenar
+// fuerza bruta. LOGIN_FAIL_DELAY_MS = 0 la desactiva (así corren las pruebas).
+const RETARDO_MAX = Number(process.env.LOGIN_FAIL_DELAY_MS ?? 400);
+
+// Espera aleatoria en [RETARDO_MAX/2, RETARDO_MAX]. Con 0 no espera.
+const pausaCredenciales = async () => {
+  if (!(RETARDO_MAX > 0)) {
+    return;
+  }
+  const minimo = Math.floor(RETARDO_MAX / 2);
+  const espera = minimo + Math.floor(Math.random() * (RETARDO_MAX - minimo + 1));
+  await new Promise((resolve) => setTimeout(resolve, espera));
+};
+
 // Hash bcrypt de un valor aleatorio: se compara cuando el usuario no existe
 // para que el tiempo de respuesta no revele cuál de los dos fallos fue.
 const HASH_DUMMY = "$2b$12$LybMgOxOi4wCQe0BWoOKXuuEnpNuJm8XqE5ORx8y1kLkuOfiu7zSO";
@@ -105,6 +119,7 @@ export class Sesion {
 
     if (!usuario) {
       await bcrypt.compare(password, HASH_DUMMY);
+      await pausaCredenciales();
       console.log(`Login fallido: usuario inexistente "${username}".`);
       throw new ErrorNegocio(MENSAJE_CREDENCIALES, 401);
     }
@@ -129,6 +144,7 @@ export class Sesion {
         MINUTOS_BLOQUEO,
         MAX_INTENTOS,
       ]);
+      await pausaCredenciales();
       console.log(
         `Login fallido: contraseña incorrecta para el usuario ${usuario.id} ` +
           `(intentos: ${intentos[0]?.intentos_fallidos ?? "?"}).`,
