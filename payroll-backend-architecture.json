@@ -25,7 +25,7 @@
   ],
   "boundaries": [
     { "kind": "region", "label": "Backend monolítico · Node.js", "wraps": ["app", "sesion", "security", "permisos", "bo", "queries", "db"] },
-    { "kind": "security-group", "label": "Seguridad del profesor", "wraps": ["security", "permisos", "bo"] }
+    { "kind": "security-group", "label": "Esquema de seguridad", "wraps": ["security", "permisos", "bo"] }
   ],
   "connections": [
     { "id": "cliente-app", "from": "cliente", "to": "app", "label": "POST /api/execute", "variant": "emphasis", "labelDy": 56 },
