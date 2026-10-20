@@ -43,9 +43,9 @@ Comportamiento:
 
   - Aborta si NODE_ENV=production (nunca toca producción).
   - Sin --with-test-user omite seed-login.sql y seed-superusuario.sql.
-  - Si el esquema base ya está aplicado (existen las tablas `perfil` y
-    `subsistema`), salta 001 y 002. Si Bloqueado_hasta ya es timestamptz,
-    salta 003. Imprime qué archivos aplicó y cuáles saltó.
+  - Detecta cada migración por separado: si existe `perfil` salta 001; si
+    existe `subsistema` salta 002; si Bloqueado_hasta ya es timestamptz salta
+    003. Imprime qué archivos aplicó y cuáles saltó.
 
 También existe `scripts/hash-password.js` para regenerar el hash bcrypt de una
 clave:
@@ -53,16 +53,38 @@ clave:
   node scripts/hash-password.js "NuevaClave123"
 
 
-3. CÓMO AGREGAR UN OBJETO DE NEGOCIO NUEVO
+3. VARIABLES DE ENTORNO
+-----------------------
+
+  PORT              puerto HTTP (3000 por defecto).
+  FRONTEND_URL      origen permitido por CORS.
+  DATABASE_URL      cadena de conexión (obligatoria).
+  DATABASE_SSL      true en Neon; false en PostgreSQL local sin SSL.
+                    "no-verify" desactiva la validación del certificado y
+                    solo es un escape de último recurso.
+  SESSION_SECRET    obligatoria en producción; firma la cookie de sesión.
+  TRUST_PROXY       saltos de proxy de confianza (1 detrás de Render,
+                    Railway o nginx). Sin esto, en producción no se emite la
+                    cookie secure.
+  LOGIN_MAX_ATTEMPTS / LOGIN_BLOCK_MINUTES / LOGIN_FAIL_DELAY_MS
+                    parámetros del bloqueo por intentos fallidos.
+
+Si el front está en otro dominio, la cookie SameSite=Lax no viaja en las
+peticiones cruzadas: hay que usar SameSite=None, Secure y trust proxy, además
+de CORS con credenciales. Si el front se sirve desde el mismo dominio, Lax es
+la opción correcta y CORS no hace falta.
+
+
+4. CÓMO AGREGAR UN OBJETO DE NEGOCIO NUEVO
 ------------------------------------------
 
 El endpoint POST /api/execute despacha por reflexión a los BO descubiertos en
-bo/. No hay que registrar nada en el código: alcanza con seguir estos pasos.
+src/bo/. No hay que registrar nada en el código: alcanza con seguir estos pasos.
 
-  a) Crear el archivo bo/<Subsistema>/<Clase>.js y exportar la clase con el
+  a) Crear el archivo src/bo/<Subsistema>/<Clase>.js y exportar la clase con el
      MISMO nombre que el archivo (nombres alfanuméricos, sin guiones):
 
-       // bo/Demo/Saludo.js
+       // src/bo/Demo/Saludo.js
        export class Saludo {
          // Recibe (db, req); la sesión se lee de req.session.
          constructor(db, req) { this.db = db; this.req = req; }
@@ -71,7 +93,7 @@ bo/. No hay que registrar nada en el código: alcanza con seguir estos pasos.
          hola(nombre) { return "hola " + nombre; }
        }
 
-     El descubrimiento lee bo/ al arrancar y en cada Admin.reloadPermissions,
+     El descubrimiento lee src/bo/ al arrancar y en cada Admin.reloadPermissions,
      así que un archivo nuevo se ve sin reiniciar el servidor.
 
   b) Sembrar en la base el subsistema, la clase, el método y el permiso. El
@@ -106,12 +128,12 @@ bo/. No hay que registrar nada en el código: alcanza con seguir estos pasos.
   c) Aplicar los cambios de permisos sin reiniciar. Hay dos formas:
 
        - Llamar por el endpoint: POST /api/execute con
-         { "subsystem": "Seguridad", "class": "Admin",
+         { "subsystem": "Security", "class": "Admin",
            "method": "reloadPermissions", "params": [] }
          (requiere sesión con permiso de Superusuario).
 
        - Reiniciar el servidor: al arrancar se cargan permisos y se
-         redescubre bo/.
+         redescubre src/bo/.
 
   d) Invocar el BO:
 
@@ -123,3 +145,33 @@ bo/. No hay que registrar nada en el código: alcanza con seguir estos pasos.
      sesión y sin permiso público; 403 con sesión pero sin permiso; 501 si la
      clase o el método no existen; 500 si el BO tiene un error propio (por
      ejemplo, un import roto).
+
+
+5. LIMITACIONES CONOCIDAS
+-------------------------
+
+  - Sesiones en memoria: se pierden al reiniciar el proceso y no se comparten
+    entre instancias. Para producción conviene un store en PostgreSQL
+    (connect-pg-simple). Mientras tanto, el despliegue debe ser una sola
+    instancia y asumir que un reinicio cierra las sesiones.
+
+  - En cada petición autenticada se consulta el estado del usuario y sus
+    perfiles actuales. Así una cuenta desactivada o sin perfiles deja de
+    autorizar en la siguiente petición, sin esperar a que expire la cookie.
+    Es una consulta indexada por petición; las peticiones públicas no la pagan.
+
+  - El login distingue 401 (credenciales), 403 (cuenta desactivada) y 423
+    (bloqueada). El tiempo de respuesta está igualado, pero el código revela
+    que el usuario existe. Es una decisión de usabilidad asumida; si se
+    prefiere no revelarlo, hay que unificar los tres a 401.
+
+  - refreshBo descubre archivos nuevos de src/bo/ sin reiniciar. Los cambios en un
+    archivo existente no se reimportan porque Node cachea import() por URL;
+    para eso hay que reiniciar el proceso (nodemon lo hace en desarrollo).
+
+  - `debeCambiarClave` se devuelve en el login y en getSession, y existe el
+    método User.cambiarClave. El backend no bloquea los demás métodos: el
+    front debe forzar el cambio de clave cuando la bandera venga en true.
+
+  - El usuario de prueba admin_prueba/Password123 es solo para desarrollo.
+    db-setup.sh lo omite sin --with-test-user y aborta si NODE_ENV=production.

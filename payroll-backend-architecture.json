@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Backend de Nómina · Arquitectura",
+    "output": "payroll-backend-architecture.html",
+    "quality_profile": "showcase",
+    "legend": { "mode": "auto" },
+    "views": [
+      { "id": "request-path", "label": "Camino de la petición", "focus": ["cliente", "app", "security", "bo", "db"], "note": "El cliente manda un sobre a /api/execute y Security lo despacha al objeto de negocio." },
+      { "id": "reflection", "label": "Reflexión y permisos", "focus": ["security", "permisos", "bo"], "note": "Forma, permiso, reflexión y ejecución, en ese orden." },
+      { "id": "datos", "label": "Datos y seguridad", "focus": ["db", "queries", "neon", "sesion"], "note": "Solo los objetos de negocio tocan la base, a través del componente de datos." }
+    ]
+  },
+  "components": [
+    { "id": "cliente", "type": "frontend", "label": "Cliente Web", "sublabel": "execute()", "tag": "otro repo", "pos": [40, 220], "size": [120, 72] },
+    { "id": "app", "type": "backend", "label": "API Express", "sublabel": "POST /api/execute", "tag": "Express 5", "pos": [240, 220], "size": [150, 72] },
+    { "id": "security", "type": "security", "label": "Security", "sublabel": "executeMethod()", "tag": "forma→permiso→reflexión", "pos": [470, 220], "size": [160, 72] },
+    { "id": "bo", "type": "backend", "label": "Objetos de negocio", "sublabel": "src/bo/Security", "tag": "Session · Menu · Admin · User", "pos": [710, 220], "size": [180, 72] },
+    { "id": "db", "type": "backend", "label": "Componente de datos", "sublabel": "query() · transaction()", "tag": "Database.js", "pos": [970, 220], "size": [170, 72] },
+    { "id": "neon", "type": "database", "label": "PostgreSQL · Neon", "sublabel": "pool máx 10", "brand": "postgresql", "tag": "sslmode=require", "pos": [1170, 220], "size": [170, 72] },
+    { "id": "sesion", "type": "backend", "label": "Sesión + CORS", "sublabel": "cookie connect.sid", "tag": "express-session", "pos": [240, 60], "size": [150, 68] },
+    { "id": "permisos", "type": "security", "label": "Mapas en memoria", "sublabel": "PermissionMethodMap", "tag": "O(1) por perfil", "pos": [470, 60], "size": [160, 68] },
+    { "id": "queries", "type": "backend", "label": "queries.yaml", "sublabel": "SQL parametrizado", "tag": "$1, $2", "pos": [970, 60], "size": [170, 68] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Backend monolítico · Node.js", "wraps": ["app", "sesion", "security", "permisos", "bo", "queries", "db"] },
+    { "kind": "security-group", "label": "Seguridad del profesor", "wraps": ["security", "permisos", "bo"] }
+  ],
+  "connections": [
+    { "id": "cliente-app", "from": "cliente", "to": "app", "label": "POST /api/execute", "variant": "emphasis", "labelDy": 56 },
+    { "id": "app-sesion", "from": "app", "to": "sesion", "label": "req.session", "fromSide": "top", "toSide": "bottom" },
+    { "id": "app-security", "from": "app", "to": "security", "label": "executeMethod", "variant": "emphasis", "labelDy": 56 },
+    { "id": "security-permisos", "from": "security", "to": "permisos", "label": "resuelve permiso", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "id": "security-bo", "from": "security", "to": "bo", "label": "reflexión", "variant": "security", "labelDy": 56 },
+    { "id": "bo-db", "from": "bo", "to": "db", "label": "solo los BO tocan la BD", "labelDy": 56 },
+    { "id": "db-queries", "from": "db", "to": "queries", "label": "carga al arrancar", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "db-neon", "from": "db", "to": "neon", "label": "SQL parametrizado", "labelDy": 56 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Punto de entrada único", "items": ["El cliente no arma rutas por entidad", "Manda { subsystem, class, method, params }", "Sesión por cookie httpOnly"] },
+    { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → permiso → reflexión → ejecución", "Permisos en mapas en memoria", "Llave: Subsistema_Clase_metodo_perfilId"] },
+    { "dot": "emerald", "title": "Datos", "items": ["Solo los objetos de negocio tocan la base", "A través del componente de datos, con parámetros", "Consultas en queries.yaml, leídas una vez"] }
+  ]
+}

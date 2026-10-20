@@ -1,4 +1,4 @@
-import { security } from "../../src/security/Security.js";
+import { security } from "../../security/Security.js";
 
 // Objeto de negocio de administración de la seguridad. reloadPermissions
 // permite aplicar cambios de permisos hechos en la BD sin reiniciar el

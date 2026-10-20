@@ -51,7 +51,8 @@ findPublicProfileId: |
 findUserByUsername: |
   SELECT u.id, u.username, u.password_hash, u.persona_id,
          concat_ws(' ', p.primer_nombre, p.primer_apellido) AS nombre,
-         u.activo, u.intentos_fallidos, u.bloqueado_hasta
+         u.activo, u.intentos_fallidos, u.bloqueado_hasta,
+         u.debe_cambiar_clave
   FROM usuario u
   JOIN persona p ON p.id = u.persona_id
   WHERE u.username = $1
@@ -66,18 +67,39 @@ findProfilesByUserId: |
   ORDER BY up.perfil_id
 
 # Suma un intento fallido y, al llegar a $3 (máximo), bloquea por $2 minutos.
-# El contador se calcula en la base (no en memoria): dos intentos simultáneos
-# no se pisan. make_interval recibe minutos, la unidad del config.
+# Al bloquear, el contador vuelve a 0: al vencer el bloqueo la cuenta tiene
+# otra vez el máximo de intentos, en vez de quedar a un solo fallo del
+# siguiente bloqueo. El contador se calcula en la base (no en memoria): dos
+# intentos simultáneos no se pisan. make_interval recibe minutos.
 registerFailedAttempt: |
   UPDATE usuario
-     SET intentos_fallidos = intentos_fallidos + 1,
-         bloqueado_hasta = CASE
+     SET bloqueado_hasta = CASE
              WHEN intentos_fallidos + 1 >= $3 THEN NOW() + make_interval(mins => $2)
              ELSE bloqueado_hasta
+         END,
+         intentos_fallidos = CASE
+             WHEN intentos_fallidos + 1 >= $3 THEN 0
+             ELSE intentos_fallidos + 1
          END,
          updated_at = NOW()
    WHERE id = $1
   RETURNING intentos_fallidos, bloqueado_hasta
+
+# Estado vivo de la sesión: si la cuenta sigue activa y qué perfiles tiene
+# ahora. Se consulta en cada petición autenticada para que desactivar la
+# cuenta o quitarle perfiles surta efecto sin esperar a que expire la cookie.
+findSessionState: |
+  SELECT u.activo, u.debe_cambiar_clave,
+         COALESCE(
+           array_agg(up.perfil_id ORDER BY up.perfil_id)
+             FILTER (WHERE pf.activo),
+           '{}'::int[]
+         ) AS perfiles
+  FROM usuario u
+  LEFT JOIN usuario_perfil up ON up.usuario_id = u.id
+  LEFT JOIN perfil pf ON pf.id = up.perfil_id
+  WHERE u.id = $1
+  GROUP BY u.id, u.activo, u.debe_cambiar_clave
 
 resetAttemptsAndAccess: |
   UPDATE usuario
@@ -100,6 +122,14 @@ existePersona: |
 existeUsuario: |
   SELECT EXISTS (SELECT 1 FROM usuario WHERE username = $1) AS username
 
+# Perfiles que se van a asignar al crear el usuario: deben existir y estar
+# activos. El tamaño del resultado se compara con la cantidad pedida.
+findActiveProfilesByIds: |
+  SELECT id
+  FROM perfil
+  WHERE id = ANY($1::int[]) AND activo
+  ORDER BY id
+
 insertPersona: |
   INSERT INTO persona
     (cedula, primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
@@ -112,3 +142,21 @@ insertUsuario: |
   INSERT INTO usuario (persona_id, username, password_hash)
   VALUES ($1, $2, $3)
   RETURNING id, username, persona_id
+
+insertUsuarioPerfil: |
+  INSERT INTO usuario_perfil (usuario_id, perfil_id)
+  SELECT $1, unnest($2::int[])
+  ON CONFLICT DO NOTHING
+
+findPasswordHashById: |
+  SELECT password_hash
+  FROM usuario
+  WHERE id = $1
+
+updatePassword: |
+  UPDATE usuario
+     SET password_hash = $1,
+         debe_cambiar_clave = false,
+         updated_at = NOW()
+   WHERE id = $2
+  RETURNING id

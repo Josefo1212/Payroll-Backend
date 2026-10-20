@@ -1,11 +1,11 @@
 import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import bcrypt from "bcrypt";
-import { pausaCredenciales } from "../bo/Seguridad/Sesion.js";
+import { pausaCredenciales } from "../src/bo/Security/Session.js";
 import {
   crearDbFalso,
   peticion,
-  Sesion,
+  Session,
   queries,
   HASH_CLAVE,
   USUARIO_OK,
@@ -19,7 +19,7 @@ afterEach(() => mock.restoreAll());
 async function crearBo(sesionInicial = {}, opciones = {}) {
   const { req } = await peticion(sesionInicial);
   const dbFalso = crearDbFalso(opciones);
-  return { bo: new Sesion(dbFalso, req), req, dbFalso };
+  return { bo: new Session(dbFalso, req), req, dbFalso };
 }
 
 test("login ok: crea la sesión sin exponer el hash", async () => {
@@ -27,12 +27,30 @@ test("login ok: crea la sesión sin exponer el hash", async () => {
 
   const resultado = await bo.login("admin", "Password123");
 
-  assert.deepEqual(resultado, { userID: 1, userName: "Admin Prueba", profiles: [2, 3] });
+  assert.deepEqual(resultado, {
+    userID: 1,
+    userName: "Admin Prueba",
+    profiles: [2, 3],
+    debeCambiarClave: false,
+  });
   assert.equal(req.session.userID, 1);
   assert.deepEqual(req.session.profiles, [2, 3]);
   assert.equal(req.session.password_hash, undefined);
   // Resetea intentos y último acceso.
   assert.ok(dbFalso.llamadas.some((l) => l.texto === queries.resetAttemptsAndAccess));
+});
+
+test("login propaga debeCambiarClave a la sesión", async () => {
+  const { bo, req } = await crearBo(
+    {},
+    { usuario: { ...USUARIO_OK, debe_cambiar_clave: true } },
+  );
+
+  const resultado = await bo.login("admin", "Password123");
+
+  assert.equal(resultado.debeCambiarClave, true);
+  assert.equal(req.session.debeCambiarClave, true);
+  assert.equal(bo.getSession().debeCambiarClave, true);
 });
 
 test("contraseña incorrecta: 401 y registra intento fallido", async () => {
@@ -117,8 +135,31 @@ test("bloqueo al llegar al máximo de intentos", async () => {
     return true;
   });
 
-  assert.equal(dbFalso.estado.intentos, 5);
+  assert.equal(dbFalso.estado.intentos, 0, "al bloquear, el contador vuelve a 0");
   assert.ok(dbFalso.estado.bloqueadoHasta > new Date(), "queda bloqueado hasta el futuro");
+});
+
+test("tras vencer el bloqueo quedan disponibles todos los intentos", async () => {
+  const { bo, dbFalso } = await crearBo(
+    {},
+    { usuario: { ...USUARIO_OK, intentos_fallidos: 4 } },
+  );
+
+  await assert.rejects(() => bo.login("admin", "incorrecta"), (error) => {
+    assert.equal(error.status, 401);
+    return true;
+  });
+  assert.equal(dbFalso.estado.intentos, 0);
+
+  // Se vence el bloqueo sin recrear el BO: el siguiente fallo empieza de 1.
+  dbFalso.estado.bloqueadoHasta = new Date(Date.now() - 1_000);
+  await assert.rejects(() => bo.login("admin", "incorrecta"), (error) => {
+    assert.equal(error.status, 401);
+    return true;
+  });
+
+  assert.equal(dbFalso.estado.intentos, 1, "no arrastra intentos del bloqueo anterior");
+  assert.equal(dbFalso.estado.bloqueadoHasta <= new Date(), true);
 });
 
 test("login con sesión existente: devuelve la sesión sin autenticar", async () => {
@@ -126,7 +167,12 @@ test("login con sesión existente: devuelve la sesión sin autenticar", async ()
 
   const resultado = await bo.login("admin", "Password123");
 
-  assert.deepEqual(resultado, { userID: 9, userName: "Ya", profiles: [7] });
+  assert.deepEqual(resultado, {
+    userID: 9,
+    userName: "Ya",
+    profiles: [7],
+    debeCambiarClave: false,
+  });
   assert.equal(
     dbFalso.llamadas.some((l) => l.texto === queries.findUserByUsername),
     false,
@@ -138,7 +184,12 @@ test("getSession devuelve la sesión; sessionExist() es booleano", async () => {
   const { bo } = await crearBo({ userID: 1, userName: "Admin", profiles: [2] });
 
   assert.equal(bo.sessionExist(), true);
-  assert.deepEqual(bo.getSession(), { userID: 1, userName: "Admin", profiles: [2] });
+  assert.deepEqual(bo.getSession(), {
+    userID: 1,
+    userName: "Admin",
+    profiles: [2],
+    debeCambiarClave: false,
+  });
 
   const { bo: boVacio } = await crearBo();
   assert.equal(boVacio.sessionExist(), false);

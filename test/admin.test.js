@@ -1,7 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { security } from "../src/security/Security.js";
-import { Admin } from "../bo/Seguridad/Admin.js";
+import { Admin } from "../src/bo/Security/Admin.js";
 import { crearReq, crearDbFalso } from "./helpers.js";
 
 const dbOriginal = security.db;
@@ -23,15 +23,15 @@ test("reloadPermissions recarga y devuelve los conteos", async () => {
     if (texto.includes("permiso_metodo")) {
       return {
         rows: [
-          { subsistema: "Seguridad", clase: "Sesion", metodo: "login", perfil_id: 1 },
+          { subsistema: "Security", clase: "Session", metodo: "login", perfil_id: 1 },
         ],
       };
     }
     if (texto.includes("permiso_opcion")) {
       return {
         rows: [
-          { subsistema: "Seguridad", opcion_id: 20, opcion: "Perfiles", orden: 1, descripcion: "x", perfil_id: 1 },
-          { subsistema: "Seguridad", opcion_id: 21, opcion: "Usuarios", orden: 2, descripcion: "y", perfil_id: 1 },
+          { subsistema: "Security", opcion_id: 20, opcion: "Perfiles", orden: 1, descripcion: "x", perfil_id: 1 },
+          { subsistema: "Security", opcion_id: 21, opcion: "Usuarios", orden: 2, descripcion: "y", perfil_id: 1 },
         ],
       };
     }
@@ -60,7 +60,7 @@ test("reloadPermissions refleja el cambio en los mapas", async () => {
     if (texto.includes("permiso_metodo")) {
       return {
         rows: [
-          { subsistema: "Seguridad", clase: "Admin", metodo: "reloadPermissions", perfil_id: 7 },
+          { subsistema: "Security", clase: "Admin", metodo: "reloadPermissions", perfil_id: 7 },
         ],
       };
     }
@@ -70,5 +70,5 @@ test("reloadPermissions refleja el cambio en los mapas", async () => {
   const resultado = await admin.reloadPermissions();
 
   assert.deepEqual(resultado, { metodos: 1, opciones: 0 });
-  assert.equal(security.PermissionMethodMap.has("Seguridad_Admin_reloadPermissions_7"), true);
+  assert.equal(security.PermissionMethodMap.has("Security_Admin_reloadPermissions_7"), true);
 });

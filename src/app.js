@@ -3,6 +3,7 @@ import session from "express-session";
 import cors from "cors";
 import dotenv from "dotenv";
 import { security } from "./security/Security.js";
+import { datosSegurosDeError } from "./errors/logError.js";
 
 dotenv.config();
 
@@ -17,7 +18,6 @@ if (esProduccion && !process.env.SESSION_SECRET) {
 const app = express();
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
   credentials: true,
@@ -60,7 +60,7 @@ app.use((error, req, res, next) => {
     return res.status(400).json({ error: "JSON inválido en el cuerpo de la petición." });
   }
 
-  console.error("Error no controlado:", error);
+  console.error("Error no controlado:", datosSegurosDeError(error));
   res.status(500).json({ error: "Error interno del servidor." });
 });
 

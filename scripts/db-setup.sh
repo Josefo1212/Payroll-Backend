@@ -64,6 +64,11 @@ zona_horaria_lista() {
   [[ "$(consulta "SELECT (data_type = 'timestamp with time zone') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuario' AND column_name = 'bloqueado_hasta'")" == "t" ]]
 }
 
+# ¿Ya está la migración 004? (subsistema renombrado a 'Security').
+seguridad_en_ingles() {
+  [[ "$(consulta "SELECT EXISTS (SELECT 1 FROM subsistema WHERE nombre = 'Security')")" == "t" ]]
+}
+
 saltados=()
 aplicados=()
 
@@ -81,12 +86,19 @@ aplicar() {
 
 # --- Migraciones -----------------------------------------------------------
 # El esquema base (001) crea `perfil`; el de seguridad (002) crea `subsistema`.
-# Si ambos existen, las migraciones ya se aplicaron y se saltan.
-if tabla_existe perfil && tabla_existe subsistema; then
-  echo "El esquema base ya está aplicado: se saltan 001 y 002."
-  saltados+=("db/migrations/001_init.sql" "db/migrations/002_esquema_seguridad.sql")
+# Se detecta cada una por separado: si 001 se aplicó pero 002 falló, no se
+# vuelve a correr 001 (fallaría por tablas existentes).
+if tabla_existe perfil; then
+  echo "001 ya está aplicada: se salta."
+  saltados+=("db/migrations/001_init.sql")
 else
   aplicar "db/migrations/001_init.sql"
+fi
+
+if tabla_existe subsistema; then
+  echo "002 ya está aplicada: se salta."
+  saltados+=("db/migrations/002_esquema_seguridad.sql")
+else
   aplicar "db/migrations/002_esquema_seguridad.sql"
 fi
 
@@ -95,6 +107,13 @@ if zona_horaria_lista; then
   saltados+=("db/migrations/003_zona_horaria_seguridad.sql")
 else
   aplicar "db/migrations/003_zona_horaria_seguridad.sql"
+fi
+
+if seguridad_en_ingles; then
+  echo "004 ya está aplicada: se salta."
+  saltados+=("db/migrations/004_renombrar_seguridad_ingles.sql")
+else
+  aplicar "db/migrations/004_renombrar_seguridad_ingles.sql"
 fi
 
 # --- Seeds -----------------------------------------------------------------

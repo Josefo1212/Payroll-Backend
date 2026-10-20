@@ -1,10 +1,10 @@
 import bcrypt from "bcrypt";
-import { queries } from "../../src/queries/loader.js";
-import { ErrorNegocio } from "../../src/errors/ErrorNegocio.js";
+import { queries } from "../../queries/loader.js";
+import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import {
   MAX_INTENTOS_FALLIDOS as MAX_INTENTOS,
   MINUTOS_BLOQUEO,
-} from "../../src/config/security.js";
+} from "../../config/security.js";
 
 // Pausa uniforme (200–400 ms) solo en los fallos de credenciales, para frenar
 // fuerza bruta. LOGIN_FAIL_DELAY_MS = 0 la desactiva (así corren las pruebas).
@@ -31,7 +31,7 @@ const MENSAJE_CREDENCIALES = "Usuario o contraseña incorrectos";
 // reflexión, no por rutas REST. Recibe (db, req); la sesión se lee de
 // this.req.session en cada llamada porque express-session la reemplaza al
 // hacer regenerate.
-export class Sesion {
+export class Session {
   #db;
   #req;
 
@@ -56,6 +56,7 @@ export class Sesion {
       userID: sesion.userID,
       userName: sesion.userName,
       profiles: Array.isArray(sesion.profiles) ? sesion.profiles : [],
+      debeCambiarClave: Boolean(sesion.debeCambiarClave),
     };
   }
 
@@ -80,7 +81,7 @@ export class Sesion {
 
     const sesion = await this.#createSession(usuario, profiles);
 
-    console.log(`Login ok: usuario ${usuario.id} (${usuario.username}).`);
+    console.log(`Login ok: usuario ${usuario.id}.`);
     return sesion;
   }
 
@@ -121,7 +122,7 @@ export class Sesion {
     if (!usuario) {
       await bcrypt.compare(password, HASH_DUMMY);
       await pausaCredenciales();
-      console.log(`Login fallido: usuario inexistente "${username}".`);
+      console.log("Login fallido: credenciales inválidas.");
       throw new ErrorNegocio(MENSAJE_CREDENCIALES, 401);
     }
 
@@ -179,6 +180,7 @@ export class Sesion {
     this.#req.session.userID = usuario.id;
     this.#req.session.userName = usuario.nombre || usuario.username;
     this.#req.session.profiles = profiles;
+    this.#req.session.debeCambiarClave = Boolean(usuario.debe_cambiar_clave);
 
     await new Promise((resolve, reject) => {
       this.#req.session.save((error) => (error ? reject(error) : resolve()));
@@ -189,6 +191,7 @@ export class Sesion {
       userID: usuario.id,
       userName: this.#req.session.userName,
       profiles,
+      debeCambiarClave: this.#req.session.debeCambiarClave,
     };
   }
 }

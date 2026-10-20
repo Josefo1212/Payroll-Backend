@@ -1,4 +1,4 @@
--- Seguridad: subsistema, clases (Sesion, Menu, Admin, Usuario), sus métodos y
+-- Security: subsistema, clases (Session, Menu, Admin, User), sus métodos y
 -- los perfiles 'Publico' y 'Superusuario' con sus permisos.
 -- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql.
 -- Idempotente: se puede correr varias veces sin duplicar datos.
@@ -11,16 +11,16 @@
 BEGIN;
 
 INSERT INTO subsistema (nombre, descripcion)
-VALUES ('Seguridad', 'Autenticación, sesiones y permisos')
+VALUES ('Security', 'Autenticación, sesiones y permisos')
 ON CONFLICT (nombre) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- Clase Sesion: autenticación como objeto de negocio.
 -- ---------------------------------------------------------------------------
 INSERT INTO clase (subsistema_id, nombre, descripcion)
-SELECT s.id, 'Sesion', 'Objeto de negocio de autenticación'
+SELECT s.id, 'Session', 'Objeto de negocio de autenticación'
 FROM subsistema s
-WHERE s.nombre = 'Seguridad'
+WHERE s.nombre = 'Security'
 ON CONFLICT (subsistema_id, nombre) DO NOTHING;
 
 INSERT INTO metodo (clase_id, nombre, descripcion)
@@ -32,8 +32,8 @@ CROSS JOIN (VALUES
     ('getSession', 'Devuelve los datos de la sesión activa'),
     ('sessionExist', 'Indica si hay una sesión vigente')
 ) AS m(nombre, descripcion)
-WHERE c.nombre = 'Sesion'
-  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+WHERE c.nombre = 'Session'
+  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
 -- Clase Menu: las opciones visibles del usuario. Se autoriza a 'Publico'
@@ -42,42 +42,47 @@ ON CONFLICT (clase_id, nombre) DO NOTHING;
 INSERT INTO clase (subsistema_id, nombre, descripcion)
 SELECT s.id, 'Menu', 'Opciones visibles del usuario'
 FROM subsistema s
-WHERE s.nombre = 'Seguridad'
+WHERE s.nombre = 'Security'
 ON CONFLICT (subsistema_id, nombre) DO NOTHING;
 
 INSERT INTO metodo (clase_id, nombre, descripcion)
 SELECT c.id, 'getOptions', 'Devuelve las opciones visibles para la sesión'
 FROM clase c
 WHERE c.nombre = 'Menu'
-  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
 -- Clase Admin: tareas de administración. Solo Superusuario.
 INSERT INTO clase (subsistema_id, nombre, descripcion)
 SELECT s.id, 'Admin', 'Administración de la seguridad'
 FROM subsistema s
-WHERE s.nombre = 'Seguridad'
+WHERE s.nombre = 'Security'
 ON CONFLICT (subsistema_id, nombre) DO NOTHING;
 
 INSERT INTO metodo (clase_id, nombre, descripcion)
 SELECT c.id, 'reloadPermissions', 'Recarga los permisos en memoria sin reiniciar'
 FROM clase c
 WHERE c.nombre = 'Admin'
-  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
--- Clase Usuario: dar de alta usuarios (BO UserBO.registrar).
+-- Clase Usuario: alta de usuarios (Usuario.registrar) y cambio de la propia
+-- contraseña (Usuario.cambiarClave).
 INSERT INTO clase (subsistema_id, nombre, descripcion)
-SELECT s.id, 'Usuario', 'Objeto de negocio de usuarios del sistema'
+SELECT s.id, 'User', 'Objeto de negocio de usuarios del sistema'
 FROM subsistema s
-WHERE s.nombre = 'Seguridad'
+WHERE s.nombre = 'Security'
 ON CONFLICT (subsistema_id, nombre) DO NOTHING;
 
 INSERT INTO metodo (clase_id, nombre, descripcion)
-SELECT c.id, 'registrar', 'Registra una persona y su usuario en una transacción'
+SELECT c.id, m.nombre, m.descripcion
 FROM clase c
-WHERE c.nombre = 'Usuario'
-  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+CROSS JOIN (VALUES
+    ('registrar', 'Registra una persona y su usuario en una transacción'),
+    ('cambiarClave', 'Cambia la contraseña del usuario autenticado')
+) AS m(nombre, descripcion)
+WHERE c.nombre = 'User'
+  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -102,8 +107,8 @@ INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
 JOIN clase c
-  ON c.nombre = 'Sesion'
- AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+  ON c.nombre = 'Session'
+ AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre IN ('login', 'logout', 'sessionExist', 'getSession')
@@ -116,10 +121,23 @@ SELECT pf.id, m.id
 FROM perfil pf
 JOIN clase c
   ON c.nombre = 'Menu'
- AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+ AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre = 'getOptions'
+ON CONFLICT DO NOTHING;
+
+-- cambiarClave es público como permiso de método, pero el BO exige sesión:
+-- cualquier usuario autenticado puede cambiar su propia clave.
+INSERT INTO permiso_metodo (perfil_id, metodo_id)
+SELECT pf.id, m.id
+FROM perfil pf
+JOIN clase c
+  ON c.nombre = 'User'
+ AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
+JOIN metodo m ON m.clase_id = c.id
+WHERE pf.nombre_perfil = 'Publico'
+  AND m.nombre = 'cambiarClave'
 ON CONFLICT DO NOTHING;
 
 -- Superusuario: permiso a TODOS los métodos de Seguridad (logout, admin y
@@ -128,8 +146,8 @@ INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
 JOIN clase c
-  ON c.nombre IN ('Sesion', 'Menu', 'Admin', 'Usuario')
- AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+  ON c.nombre IN ('Session', 'Menu', 'Admin', 'User')
+ AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Superusuario'
 ON CONFLICT DO NOTHING;
@@ -147,14 +165,14 @@ CROSS JOIN (VALUES
     ('Usuarios', 'Gestión de usuarios', 2),
     ('Perfiles', 'Gestión de perfiles y permisos', 3)
 ) AS o(nombre, descripcion, orden)
-WHERE s.nombre = 'Seguridad'
+WHERE s.nombre = 'Security'
 ON CONFLICT (subsistema_id, nombre) DO NOTHING;
 
 INSERT INTO permiso_opcion (perfil_id, opcion_id)
 SELECT pf.id, o.id
 FROM perfil pf
 JOIN opcion o
-  ON o.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+  ON o.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 WHERE pf.nombre_perfil = 'Superusuario'
 ON CONFLICT DO NOTHING;
 

@@ -1,5 +1,5 @@
 -- Usuario temporal para probar el login por POST /api/execute
--- (subsystem "Seguridad", class "Sesion", method "login").
+-- (subsystem "Security", class "Session", method "login").
 --
 -- ADVERTENCIA: es SOLO para desarrollo. Crea el usuario 'admin_prueba' con una
 -- clave conocida ('Password123'), así que NO debe aplicarse en producción.
@@ -23,10 +23,17 @@ ON CONFLICT (cedula) DO NOTHING;
 
 -- DO NOTHING: no se reescribe la clave en cada corrida (si alguien la cambió,
 -- se respeta). Borrar la fila a mano para volver a sembrarla.
-INSERT INTO usuario (persona_id, username, password_hash)
-SELECT p.id, 'admin_prueba', '$2b$12$GqShTrQm552qyROnu2.0PeIGFY04MZngsnfsOyitCmp99L4gIEx2e'
+INSERT INTO usuario (persona_id, username, password_hash, debe_cambiar_clave)
+SELECT p.id, 'admin_prueba', '$2b$12$GqShTrQm552qyROnu2.0PeIGFY04MZngsnfsOyitCmp99L4gIEx2e', false
 FROM persona p
 WHERE p.cedula = 'TEST-LOGIN-001'
 ON CONFLICT (username) DO NOTHING;
+
+-- El usuario de prueba no debe quedar obligado a cambiar la clave: se usa
+-- para probar login/permisos, no para el flujo de primer ingreso.
+UPDATE usuario
+   SET debe_cambiar_clave = false,
+       updated_at = NOW()
+ WHERE username = 'admin_prueba';
 
 COMMIT;

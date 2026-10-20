@@ -1,4 +1,4 @@
-import { security } from "../../src/security/Security.js";
+import { security } from "../../security/Security.js";
 
 // Objeto de negocio del menú: arma las opciones visibles (lo que el usuario
 // VE) a partir de los perfiles de la sesión y del mapa de permisos de opción

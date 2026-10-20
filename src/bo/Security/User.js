@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
-import { queries } from "../../src/queries/loader.js";
-import { ErrorNegocio } from "../../src/errors/ErrorNegocio.js";
+import { queries } from "../../queries/loader.js";
+import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 
 // Límite duro de bcrypt: por encima de 72 bytes la clave se trunca en
 // silencio, así que se rechaza explícitamente.
@@ -32,11 +32,11 @@ function validarPassword(password) {
   }
 }
 
-// Objeto de negocio del subsistema Seguridad. Los métodos van en el
+// Objeto de negocio del subsistema Security. Los métodos van en el
 // prototipo (método normal, no función flecha): executeMethod los busca
 // con hasOwnProperty sobre Clase.prototype. Recibe (db, req); la sesión se
 // lee de this.req.session (express-session la reemplaza al hacer regenerate).
-export class Usuario {
+export class User {
   #db;
   #req;
 
@@ -64,6 +64,8 @@ export class Usuario {
       rif,
       username,
       password,
+      perfil_id,
+      perfiles,
     } = datos ?? {};
 
     if (!cedula || !primer_nombre || !primer_apellido || !username || !password) {
@@ -74,6 +76,26 @@ export class Usuario {
     }
 
     validarPassword(password);
+
+    // Un usuario sin perfiles no puede entrar: el login lo rechaza con 403.
+    // Se acepta `perfiles` (arreglo) o `perfil_id` (uno solo).
+    const solicitados = Array.isArray(perfiles)
+      ? perfiles
+      : perfil_id != null
+        ? [perfil_id]
+        : [];
+    const perfilesAsignados = [...new Set(solicitados)];
+
+    if (perfilesAsignados.length === 0) {
+      throw new ErrorNegocio(
+        "Debe asignarse al menos un perfil al usuario.",
+        400,
+      );
+    }
+
+    if (!perfilesAsignados.every((id) => Number.isInteger(id) && id > 0)) {
+      throw new ErrorNegocio("Los perfiles deben ser ids enteros positivos.", 400);
+    }
 
     try {
       return await this.#db.transaction(async (cliente) => {
@@ -93,6 +115,17 @@ export class Usuario {
         ]);
         if (usuarioDuplicado.rows[0].username) {
           throw new ErrorNegocio("Ya existe un usuario con ese username.", 409);
+        }
+
+        const perfilesActivos = await cliente.query(
+          queries.findActiveProfilesByIds,
+          [perfilesAsignados],
+        );
+        if (perfilesActivos.rows.length !== perfilesAsignados.length) {
+          throw new ErrorNegocio(
+            "Algún perfil no existe o está inactivo.",
+            400,
+          );
         }
 
         const passwordHash = await bcrypt.hash(password, 12);
@@ -118,7 +151,14 @@ export class Usuario {
           passwordHash,
         ]);
 
-        return usuario.rows[0];
+        // El vínculo N:M va en la misma transacción: o queda el usuario con
+        // sus perfiles, o no queda nada.
+        await cliente.query(queries.insertUsuarioPerfil, [
+          usuario.rows[0].id,
+          perfilesAsignados,
+        ]);
+
+        return { ...usuario.rows[0], perfiles: perfilesAsignados };
       });
     } catch (error) {
       // Carrera entre el EXISTS y el INSERT: si otro proceso insertó lo
@@ -129,5 +169,42 @@ export class Usuario {
       }
       throw error;
     }
+  }
+
+  // Cambia la contraseña del usuario autenticado. No recibe el id: sale de la
+  // sesión, así nadie puede cambiar la clave de otro pasando un id.
+  async cambiarClave(actual, nueva) {
+    const usuarioId = this.#req?.session?.userID;
+    if (!usuarioId) {
+      throw new ErrorNegocio("Debes iniciar sesión.", 401);
+    }
+
+    if (typeof actual !== "string" || actual === "") {
+      throw new ErrorNegocio("La contraseña actual es obligatoria.", 400);
+    }
+
+    validarPassword(nueva);
+
+    const { rows } = await this.#db.query(queries.findPasswordHashById, [
+      usuarioId,
+    ]);
+    const usuario = rows[0];
+    if (!usuario) {
+      throw new ErrorNegocio("Debes iniciar sesión.", 401);
+    }
+
+    const coincide = await bcrypt.compare(actual, usuario.password_hash);
+    if (!coincide) {
+      throw new ErrorNegocio("La contraseña actual es incorrecta.", 401);
+    }
+
+    const passwordHash = await bcrypt.hash(nueva, 12);
+    await this.#db.query(queries.updatePassword, [passwordHash, usuarioId]);
+
+    if (this.#req?.session) {
+      this.#req.session.debeCambiarClave = false;
+    }
+
+    return { ok: true };
   }
 }

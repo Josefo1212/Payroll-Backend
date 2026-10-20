@@ -1,7 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { security } from "../src/security/Security.js";
-import { Menu } from "../bo/Seguridad/Menu.js";
+import { Menu } from "../src/bo/Security/Menu.js";
 import { crearReq, peticion } from "./helpers.js";
 
 // Opciones de prueba: 'Perfiles' (perfil 1) y 'Usuarios' (perfil 2) se
@@ -9,9 +9,9 @@ import { crearReq, peticion } from "./helpers.js";
 const OPCIONES = [
   { subsistema: "Nomina", opcion_id: 10, opcion: "Periodos", orden: 2, descripcion: "Periodos", perfil_id: 1 },
   { subsistema: "Nomina", opcion_id: 11, opcion: "Recibos", orden: 1, descripcion: "Recibos", perfil_id: 2 },
-  { subsistema: "Seguridad", opcion_id: 20, opcion: "Perfiles", orden: 1, descripcion: "Perfiles", perfil_id: 1 },
-  { subsistema: "Seguridad", opcion_id: 20, opcion: "Perfiles", orden: 1, descripcion: "Perfiles", perfil_id: 2 },
-  { subsistema: "Seguridad", opcion_id: 21, opcion: "Usuarios", orden: 2, descripcion: "Usuarios", perfil_id: 1 },
+  { subsistema: "Security", opcion_id: 20, opcion: "Perfiles", orden: 1, descripcion: "Perfiles", perfil_id: 1 },
+  { subsistema: "Security", opcion_id: 20, opcion: "Perfiles", orden: 1, descripcion: "Perfiles", perfil_id: 2 },
+  { subsistema: "Security", opcion_id: 21, opcion: "Usuarios", orden: 2, descripcion: "Usuarios", perfil_id: 1 },
 ];
 
 // Reescribe el mapa de opciones del singleton de seguridad (el mismo que usan
@@ -54,7 +54,7 @@ test("getOptions devuelve las opciones de los perfiles, sin duplicados", async (
     id: 20,
     nombre: "Perfiles",
     descripcion: "Perfiles",
-    subsistema: "Seguridad",
+    subsistema: "Security",
   });
 });
 
@@ -67,8 +67,8 @@ test("getOptions ordena por subsistema y luego por orden", async () => {
   assert.deepEqual(claves, [
     "Nomina/11",
     "Nomina/10",
-    "Seguridad/20",
-    "Seguridad/21",
+    "Security/20",
+    "Security/21",
   ]);
 });
 test("getOptions sin sesión devuelve []", async () => {

@@ -1,5 +1,6 @@
 import app from './app.js';
 import { db } from "./database/Database.js";
+import { datosSegurosDeError } from "./errors/logError.js";
 import { security } from "./security/Security.js";
 
 const PORT = process.env.PORT || 3000;
@@ -7,8 +8,20 @@ const PORT = process.env.PORT || 3000;
 const startServer = async () => {
   try {
     await security.loadPermission();
+
+    // Sin el perfil Publico los métodos de login/logout quedan sin permiso y
+    // todo responde 401 sin explicación. Es un error de despliegue: fallar
+    // al arrancar es más claro que arrancar a medias.
+    if (security.PublicProfileId == null) {
+      throw new Error(
+        "No existe el perfil 'Publico'. Aplicá db/seed-seguridad.sql antes de arrancar.",
+      );
+    }
   } catch (error) {
-    console.error("Fallo al cargar permisos. El servidor no arranca:", error);
+    console.error(
+      "Fallo al cargar permisos. El servidor no arranca:",
+      datosSegurosDeError(error),
+    );
     process.exit(1);
   }
 

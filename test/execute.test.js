@@ -21,19 +21,19 @@ afterEach(() => {
 // Carga los mapas de permisos con permiso para login (perfil 1), logout
 // (perfiles 2 y 9, este último NO es Superusuario) y un perfil público con id
 // 5 autorizado a login.
-async function crearSecurity({ publicoId = null } = {}) {
-  const dbFalso = crearDbFalso({ publicoId });
+async function crearSecurity({ publicoId = null, sesionPorUsuario = null } = {}) {
+  const dbFalso = crearDbFalso({ publicoId, sesionPorUsuario });
   const seguridad = new Security(dbFalso);
   await seguridad.loadPermission();
 
-  seguridad.setPermissionMethod("Seguridad", "Sesion", "login", 1);
-  seguridad.setPermissionMethod("Seguridad", "Sesion", "logout", 2);
-  seguridad.setPermissionMethod("Seguridad", "Sesion", "logout", 9);
-  seguridad.setPermissionMethod("Seguridad", "Sesion", "constructor", 3);
-  seguridad.setPermissionMethod("Seguridad", "Sesion", "toString", 3);
-  seguridad.setPermissionMethod("Seguridad", "Admin", "reloadPermissions", 2);
+  seguridad.setPermissionMethod("Security", "Session", "login", 1);
+  seguridad.setPermissionMethod("Security", "Session", "logout", 2);
+  seguridad.setPermissionMethod("Security", "Session", "logout", 9);
+  seguridad.setPermissionMethod("Security", "Session", "constructor", 3);
+  seguridad.setPermissionMethod("Security", "Session", "toString", 3);
+  seguridad.setPermissionMethod("Security", "Admin", "reloadPermissions", 2);
   if (publicoId != null) {
-    seguridad.setPermissionMethod("Seguridad", "Sesion", "login", publicoId);
+    seguridad.setPermissionMethod("Security", "Session", "login", publicoId);
   }
   return { seguridad, dbFalso };
 }
@@ -45,7 +45,7 @@ test("login público se autoriza con el perfil Publico", async () => {
   const req = crearReq({});
 
   const { status } = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Sesion", method: "login", params: [] }),
+    peticion({ subsystem: "Security", class: "Session", method: "login", params: [] }),
     req,
   );
 
@@ -58,7 +58,7 @@ test("método protegido sin sesión: 401", async () => {
   const req = crearReq({});
 
   const { status } = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Sesion", method: "logout", params: [] }),
+    peticion({ subsystem: "Security", class: "Session", method: "logout", params: [] }),
     req,
   );
 
@@ -66,16 +66,53 @@ test("método protegido sin sesión: 401", async () => {
 });
 
 test("método protegido con sesión sin permiso: 403", async () => {
-  const { seguridad } = await crearSecurity();
-  // Perfil 8 no tiene permiso a logout (el 2 y el 9 sí).
+  // Perfil 8 no tiene permiso a logout (el 2 y el 9 sí). La sesión viva se
+  // relee de la base, así que el fake debe devolver ese perfil.
+  const { seguridad } = await crearSecurity({
+    sesionPorUsuario: { 10: { activo: true, perfiles: [8] } },
+  });
   const req = crearReq({ userID: 10, profiles: [8] });
 
   const { status } = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Sesion", method: "logout", params: [] }),
+    peticion({ subsystem: "Security", class: "Session", method: "logout", params: [] }),
     req,
   );
 
   assert.equal(status, 403);
+});
+
+test("sesión de un usuario desactivado: 401 y destruye la sesión", async () => {
+  const { seguridad } = await crearSecurity({
+    sesionPorUsuario: { 10: { activo: false, perfiles: [2] } },
+  });
+  const req = crearReq({ userID: 10, profiles: [2] });
+
+  const { status, body } = await seguridad.executeMethod(
+    peticion({ subsystem: "Security", class: "Session", method: "logout", params: [] }),
+    req,
+  );
+
+  assert.equal(status, 401);
+  assert.match(body.error, /iniciar sesión/i);
+  assert.equal(req.session, undefined, "express-session borra req.session al destruir");
+});
+
+test("la sesión usa los perfiles actuales de la base, no los de la cookie", async () => {
+  const { seguridad } = await crearSecurity({
+    sesionPorUsuario: { 10: { activo: true, perfiles: [2] } },
+  });
+  seguridad.setPermissionMethod("Security", "Session", "getSession", 2);
+
+  // La cookie trae el perfil 8, pero la base ya solo tiene el 2.
+  const req = crearReq({ userID: 10, profiles: [8] });
+  const { status, body } = await seguridad.executeMethod(
+    peticion({ subsystem: "Security", class: "Session", method: "getSession", params: [] }),
+    req,
+  );
+
+  assert.equal(status, 200);
+  assert.deepEqual(body.profiles, [2]);
+  assert.deepEqual(req.session.profiles, [2]);
 });
 
 test("ruta con ../ se rechaza con 400", async () => {
@@ -83,7 +120,7 @@ test("ruta con ../ se rechaza con 400", async () => {
   const req = crearReq({ userID: 10, profiles: [1] });
 
   const { status } = await seguridad.executeMethod(
-    peticion({ subsystem: "../", class: "Sesion", method: "login", params: [] }),
+    peticion({ subsystem: "../", class: "Session", method: "login", params: [] }),
     req,
   );
 
@@ -91,12 +128,14 @@ test("ruta con ../ se rechaza con 400", async () => {
 });
 
 test('"constructor" y "toString" responden 501', async () => {
-  const { seguridad } = await crearSecurity();
+  const { seguridad } = await crearSecurity({
+    sesionPorUsuario: { 10: { activo: true, perfiles: [1, 3] } },
+  });
   const req = crearReq({ userID: 10, profiles: [1, 3] });
 
   for (const method of ["constructor", "toString"]) {
     const { status } = await seguridad.executeMethod(
-      peticion({ subsystem: "Seguridad", class: "Sesion", method, params: [] }),
+      peticion({ subsystem: "Security", class: "Session", method, params: [] }),
       req,
     );
     assert.equal(status, 501, `método ${method}`);
@@ -109,7 +148,7 @@ test("ErrorNegocio se traduce a su status", async () => {
 
   // login con credenciales vacías lanza ErrorNegocio 400.
   const { status } = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Sesion", method: "login", params: ["", ""] }),
+    peticion({ subsystem: "Security", class: "Session", method: "login", params: ["", ""] }),
     req,
   );
 
@@ -117,12 +156,14 @@ test("ErrorNegocio se traduce a su status", async () => {
 });
 
 test("logout a través del endpoint limpia la cookie", async () => {
-  const { seguridad } = await crearSecurity();
+  const { seguridad } = await crearSecurity({
+    sesionPorUsuario: { 10: { activo: true, perfiles: [2] } },
+  });
   const req = crearReq({ userID: 10, userName: "Admin", profiles: [2] });
   const res = crearRes();
 
   const { status, body } = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Sesion", method: "logout", params: [] }),
+    peticion({ subsystem: "Security", class: "Session", method: "logout", params: [] }),
     req,
   );
 
@@ -137,12 +178,14 @@ test("logout a través del endpoint limpia la cookie", async () => {
 });
 
 test("logout con perfil distinto de Superusuario: 200", async () => {
-  const { seguridad } = await crearSecurity();
+  const { seguridad } = await crearSecurity({
+    sesionPorUsuario: { 10: { activo: true, perfiles: [9] } },
+  });
   // Perfil 9 no es Superusuario, pero tiene permiso a logout (sembrado).
   const req = crearReq({ userID: 10, userName: "Juan", profiles: [9] });
 
   const { status, body } = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Sesion", method: "logout", params: [] }),
+    peticion({ subsystem: "Security", class: "Session", method: "logout", params: [] }),
     req,
   );
 
@@ -155,10 +198,10 @@ test("logout sin sesión responde 200 { ok: true }", async () => {
   const req = crearReq({});
   // logout es público (perfil Publico), así que sin sesión también entra y el
   // BO lo trata como idempotente.
-  seguridad.setPermissionMethod("Seguridad", "Sesion", "logout", 5);
+  seguridad.setPermissionMethod("Security", "Session", "logout", 5);
 
   const { status, body } = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Sesion", method: "logout", params: [] }),
+    peticion({ subsystem: "Security", class: "Session", method: "logout", params: [] }),
     req,
   );
 
@@ -167,7 +210,12 @@ test("logout sin sesión responde 200 { ok: true }", async () => {
 });
 
 test("reloadPermissions: perfil sin permiso 403, Superusuario 200", async () => {
-  const { seguridad } = await crearSecurity();
+  const { seguridad } = await crearSecurity({
+    sesionPorUsuario: {
+      10: { activo: true, perfiles: [8] },
+      1: { activo: true, perfiles: [2] },
+    },
+  });
 
   // Admin.reloadPermissions llama a security.loadPermission(): que use el
   // fake para no abrir conexión.
@@ -176,14 +224,14 @@ test("reloadPermissions: perfil sin permiso 403, Superusuario 200", async () => 
 
   const sinPermiso = crearReq({ userID: 10, profiles: [8] });
   const rechazado = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Admin", method: "reloadPermissions", params: [] }),
+    peticion({ subsystem: "Security", class: "Admin", method: "reloadPermissions", params: [] }),
     sinPermiso,
   );
   assert.equal(rechazado.status, 403);
 
   const superusuario = crearReq({ userID: 1, profiles: [2] });
   const aceptado = await seguridad.executeMethod(
-    peticion({ subsystem: "Seguridad", class: "Admin", method: "reloadPermissions", params: [] }),
+    peticion({ subsystem: "Security", class: "Admin", method: "reloadPermissions", params: [] }),
     superusuario,
   );
   assert.equal(aceptado.status, 200);
@@ -194,7 +242,7 @@ test("reloadPermissions: perfil sin permiso 403, Superusuario 200", async () => 
 test("getPermissionMethod/getPermissionOption consultan los mapas", async () => {
   const { seguridad } = await crearSecurity();
 
-  assert.equal(seguridad.getPermissionMethod("Seguridad_Sesion_login_1"), true);
-  assert.equal(seguridad.getPermissionMethod("Seguridad_Sesion_login_99"), false);
-  assert.equal(seguridad.getPermissionOption("Seguridad_inexistente_1"), null);
+  assert.equal(seguridad.getPermissionMethod("Security_Session_login_1"), true);
+  assert.equal(seguridad.getPermissionMethod("Security_Session_login_99"), false);
+  assert.equal(seguridad.getPermissionOption("Security_inexistente_1"), null);
 });

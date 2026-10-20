@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Usuario } from "../bo/Seguridad/Usuario.js";
+import { User } from "../src/bo/Security/User.js";
 import { ErrorNegocio } from "../src/errors/ErrorNegocio.js";
+import { crearDbFalso, crearReq, queries, HASH_CLAVE } from "./helpers.js";
 
 // La validación de contraseña corre antes de tocar la BD. Este doble falla si
 // `registrar` intenta abrir una transacción: así una prueba solo puede pasar
@@ -20,10 +21,11 @@ const base = {
   primer_nombre: "Ana",
   primer_apellido: "Pérez",
   username: "ana",
+  perfiles: [1],
 };
 
 async function rechaza(password, fragmento) {
-  const usuario = new Usuario(dbQueRevienta, {});
+  const usuario = new User(dbQueRevienta, {});
   await assert.rejects(
     () => usuario.registrar({ ...base, password }),
     (error) => {
@@ -57,7 +59,7 @@ test("rechaza contraseña de más de 72 bytes", async () => {
 
 test("acepta una contraseña válida de exactamente 72 bytes", async () => {
   // 71 'a' + '1' = 72 bytes: válida, debe llegar a la BD (y reventar ahí).
-  const usuario = new Usuario(dbQueRevienta, {});
+  const usuario = new User(dbQueRevienta, {});
   await assert.rejects(
     () => usuario.registrar({ ...base, password: "a".repeat(71) + "1" }),
     /no debería tocar la BD/,
@@ -65,9 +67,126 @@ test("acepta una contraseña válida de exactamente 72 bytes", async () => {
 });
 
 test("acepta una contraseña válida de 8 caracteres", async () => {
-  const usuario = new Usuario(dbQueRevienta, {});
+  const usuario = new User(dbQueRevienta, {});
   await assert.rejects(
     () => usuario.registrar({ ...base, password: "abcdefg1" }),
     /no debería tocar la BD/,
   );
+});
+
+test("registrar exige al menos un perfil", async () => {
+  const { perfiles, ...sinPerfiles } = base;
+  const usuario = new User(dbQueRevienta, {});
+
+  await assert.rejects(
+    () => usuario.registrar({ ...sinPerfiles, password: "abcdefg1" }),
+    (error) => {
+      assert.ok(error instanceof ErrorNegocio);
+      assert.equal(error.status, 400);
+      assert.match(error.message, /al menos un perfil/i);
+      return true;
+    },
+  );
+});
+
+test("registrar rechaza perfiles que no son ids enteros positivos", async () => {
+  const usuario = new User(dbQueRevienta, {});
+
+  for (const perfiles of [[1, "2"], [0], [1.5]]) {
+    await assert.rejects(
+      () => usuario.registrar({ ...base, perfiles, password: "abcdefg1" }),
+      (error) => {
+        assert.ok(error instanceof ErrorNegocio);
+        assert.equal(error.status, 400);
+        assert.match(error.message, /ids enteros positivos/i);
+        return true;
+      },
+      `perfiles ${JSON.stringify(perfiles)}`,
+    );
+  }
+});
+
+test("registrar rechaza un perfil inexistente o inactivo", async () => {
+  const db = crearDbFalso({ perfilesActivos: [1] });
+  const usuario = new User(db, {});
+
+  await assert.rejects(
+    () => usuario.registrar({ ...base, perfiles: [1, 2], password: "abcdefg1" }),
+    (error) => {
+      assert.ok(error instanceof ErrorNegocio);
+      assert.equal(error.status, 400);
+      assert.match(error.message, /no existe o está inactivo/i);
+      return true;
+    },
+  );
+  assert.equal(
+    db.llamadas.some((l) => l.texto === queries.insertUsuario),
+    false,
+    "no inserta el usuario si un perfil falla",
+  );
+});
+
+test("registrar asigna los perfiles en la misma transacción", async () => {
+  const db = crearDbFalso({ perfilesActivos: [1, 2] });
+  const usuario = new User(db, {});
+
+  // Repetido a propósito: se deduplica antes de insertar.
+  const resultado = await usuario.registrar({
+    ...base,
+    perfiles: [1, 2, 2],
+    password: "abcdefg1",
+  });
+
+  assert.deepEqual(resultado.perfiles, [1, 2]);
+  const insercion = db.llamadas.find((l) => l.texto === queries.insertUsuarioPerfil);
+  assert.ok(insercion);
+  assert.deepEqual(insercion.params, [200, [1, 2]]);
+});
+
+test("cambiarClave exige sesión", async () => {
+  const usuario = new User(dbQueRevienta, crearReq({}));
+
+  await assert.rejects(() => usuario.cambiarClave("Password123", "NuevaClave123"), (error) => {
+    assert.ok(error instanceof ErrorNegocio);
+    assert.equal(error.status, 401);
+    return true;
+  });
+});
+
+test("cambiarClave rechaza una clave nueva inválida antes de tocar la BD", async () => {
+  const usuario = new User(dbQueRevienta, crearReq({ userID: 1 }));
+
+  await assert.rejects(() => usuario.cambiarClave("Password123", "corta"), (error) => {
+    assert.ok(error instanceof ErrorNegocio);
+    assert.equal(error.status, 400);
+    return true;
+  });
+});
+
+test("cambiarClave rechaza la contraseña actual incorrecta", async () => {
+  const db = crearDbFalso({});
+  const usuario = new User(db, crearReq({ userID: 1 }));
+
+  await assert.rejects(() => usuario.cambiarClave("incorrecta", "NuevaClave123"), (error) => {
+    assert.ok(error instanceof ErrorNegocio);
+    assert.equal(error.status, 401);
+    assert.match(error.message, /actual es incorrecta/i);
+    return true;
+  });
+  assert.equal(db.llamadas.some((l) => l.texto === queries.updatePassword), false);
+});
+
+test("cambiarClave actualiza el hash y limpia la bandera de la sesión", async () => {
+  const db = crearDbFalso({});
+  const req = crearReq({ userID: 1, debeCambiarClave: true });
+  const usuario = new User(db, req);
+
+  const resultado = await usuario.cambiarClave("Password123", "NuevaClave123");
+
+  assert.deepEqual(resultado, { ok: true });
+  assert.equal(req.session.debeCambiarClave, false);
+  assert.ok(db.llamadas.some((l) => l.texto === queries.updatePassword));
+  // El hash guardado ya no corresponde a la clave anterior.
+  const { params } = db.llamadas.find((l) => l.texto === queries.updatePassword);
+  assert.notEqual(params[0], HASH_CLAVE);
 });

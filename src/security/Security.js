@@ -6,14 +6,14 @@ import { queries } from "../queries/loader.js";
 import { ErrorNegocio } from "../errors/ErrorNegocio.js";
 
 // Directorio raíz de los objetos de negocio, resuelto desde este archivo
-// (src/security/ → ../../bo). Se puede inyectar otro en el constructor para
-// las pruebas que usan un bo/ temporal.
-const BO_DIR_POR_DEFECTO = fileURLToPath(new URL("../../bo", import.meta.url));
+// (src/security/ → ../bo). Se puede inyectar otro en el constructor para
+// las pruebas que usan un src/bo temporal.
+const BO_DIR_POR_DEFECTO = fileURLToPath(new URL("../bo", import.meta.url));
 
-// Los BO viven en bo/<Subsistema>/<Clase>.js y exportan la clase con el mismo
+// Los BO viven en src/bo/<Subsistema>/<Clase>.js y exportan la clase con el mismo
 // nombre. El descubrimiento se hace al arrancar (y en cada refreshBo()) leyendo
 // el directorio real con fs: el cliente nunca elige rutas, solo se importan
-// archivos que existían en bo/ en el último descubrimiento.
+// archivos que existían en src/bo en el último descubrimiento.
 const NOMBRE_VALIDO = /^[A-Za-z0-9]+$/;
 
 // Node formatea ERR_MODULE_NOT_FOUND como:
@@ -63,10 +63,12 @@ class Security {
     this.refreshBo();
   }
 
-  // Descubre los BO en disco: cada subcarpeta de bo/ es un subsistema y cada
+  // Descubre los BO en disco: cada subcarpeta de src/bo es un subsistema y cada
   // archivo .js dentro es una clase. Solo entran nombres que cumplan el regex
   // alfanumérico (nada de ".", "..", ni separadores de ruta). Reemplaza el
-  // mapa de una vez y descarta la caché de clases para que se reimporten.
+  // mapa de una vez y descarta la caché de clases. Node cachea import() por
+  // URL: un archivo NUEVO se carga, pero los cambios en uno existente no se
+  // reimportan hasta reiniciar el proceso (nodemon lo hace en desarrollo).
   refreshBo = () => {
     const nuevoMapa = new Map();
 
@@ -74,7 +76,7 @@ class Security {
     try {
       subsistemas = readdirSync(this.boDir, { withFileTypes: true });
     } catch (error) {
-      // Sin carpeta bo/ no hay BO: no es fatal, el servidor arranca sin ninguno.
+      // Sin carpeta src/bo no hay BO: no es fatal, el servidor arranca sin ninguno.
       if (error?.code !== "ENOENT") {
         throw error;
       }
@@ -117,7 +119,7 @@ class Security {
   };
 
   loadPermission = async () => {
-    // Redescubre bo/ en cada carga: un BO nuevo se ve sin reiniciar.
+    // Redescubre src/bo en cada carga: un BO nuevo se ve sin reiniciar.
     this.refreshBo();
 
     const [metodos, opciones, publico] = await Promise.all([
@@ -209,9 +211,10 @@ class Security {
   };
 
   // Despacho de un método de negocio. El orden es innegociable:
-  // 1) forma, 2) permiso, 3) reflexión y 4) ejecución. Nunca se invierte:
-  // validar el permiso después de la reflexión dejaría que el cliente elija
-  // qué archivo se carga antes de estar autorizado. Se recibe `req` completo
+  // 1) forma, 2) sesión viva, 3) permiso, 4) reflexión y 5) ejecución. Nunca
+  // se invierte: validar el permiso después de la reflexión dejaría que el
+  // cliente elija qué archivo se carga antes de estar autorizado. Se recibe
+  // `req` completo
   // (no solo la sesión): express-session reemplaza req.session al hacer
   // regenerate, y los objetos de negocio construidos acá leen this.req.session
   // sobre el objeto vivo. Devuelve { status, body }.
@@ -236,7 +239,31 @@ class Security {
         },
       };
     }
-    // 2. Permiso, resuelto en memoria con los perfiles efectivos: los de la
+    // 2. Sesión viva: si hay un usuario autenticado, se relee su estado y sus
+    //    perfiles actuales. Así una cuenta desactivada (o sin perfiles) deja
+    //    de autorizar aunque la cookie siga vigente. Es una consulta indexada
+    //    por petición autenticada; las peticiones públicas no la pagan.
+    if (req?.session?.userID) {
+      const usuarioId = req.session.userID;
+      const { rows } = await this.db.query(queries.findSessionState, [usuarioId]);
+      const estado = rows[0];
+
+      if (!estado?.activo) {
+        await new Promise((resolve, reject) => {
+          req.session.destroy((error) => (error ? reject(error) : resolve()));
+        });
+        console.warn(`401: la sesión del usuario ${usuarioId} ya no es válida.`);
+        return {
+          status: 401,
+          body: { error: "Debes iniciar sesión." },
+        };
+      }
+
+      req.session.profiles = Array.isArray(estado.perfiles) ? estado.perfiles : [];
+      req.session.debeCambiarClave = Boolean(estado.debe_cambiar_clave);
+    }
+
+    // 3. Permiso, resuelto en memoria con los perfiles efectivos: los de la
     //    sesión más el del perfil 'Publico' (si existe), que autoriza a
     //    cualquiera aunque no haya sesión. Basta con que uno autorice (OR).
     const perfiles = Array.isArray(req?.session?.profiles) ? req.session.profiles : [];
@@ -246,7 +273,7 @@ class Security {
         : perfiles;
 
     const autorizado = perfilesEfectivos.some((perfilId) =>
-      this.PermissionMethodMap.has(`${subsystem}_${clase}_${method}_${perfilId}`),
+      this.getPermissionMethod(`${subsystem}_${clase}_${method}_${perfilId}`),
     );
 
     if (!autorizado) {
@@ -270,7 +297,7 @@ class Security {
       };
     }
 
-    // 3. Reflexión. La ruta sale del BoMap (descubierto en disco al arrancar,
+    // 4. Reflexión. La ruta sale del BoMap (descubierto en disco al arrancar,
     //    refrescable con refreshBo()); la clase se cachea por `Subsistema/Clase`.
     const llaveClase = `${subsystem}/${clase}`;
     let Clase = this.ClaseCache.get(llaveClase);
@@ -323,7 +350,7 @@ class Security {
       return { status: 501, body: { error: "Método no encontrado." } };
     }
 
-    // 4. Ejecución: el objeto de negocio recibe el componente de BD y la
+    // 5. Ejecución: el objeto de negocio recibe el componente de BD y la
     //    petición (de la que lee this.req.session, siempre viva). Un
     //    ErrorNegocio del BO se traduce a su código; cualquier otro error
     //    se propaga (no se oculta).
