@@ -5,8 +5,10 @@ import { security } from "../../src/security/Security.js";
 // servidor: loadPermission() reemplaza los mapas de forma atómica.
 export class Admin {
   // Recarga los mapas en memoria y devuelve cuántos métodos y opciones
-  // quedaron cargados.
+  // quedaron cargados. Refresca también el descubrimiento de BO para que un
+  // objeto de negocio nuevo se vea sin reiniciar el servidor.
   async reloadPermissions() {
+    security.refreshBo();
     await security.loadPermission();
 
     return {

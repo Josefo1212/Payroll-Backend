@@ -1,17 +1,19 @@
+import { readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { db } from "../database/Database.js";
 import { queries } from "../queries/loader.js";
 import { ErrorNegocio } from "../errors/ErrorNegocio.js";
 
+// Directorio raíz de los objetos de negocio, resuelto desde este archivo
+// (src/security/ → ../../bo). Se puede inyectar otro en el constructor para
+// las pruebas que usan un bo/ temporal.
+const BO_DIR_POR_DEFECTO = fileURLToPath(new URL("../../bo", import.meta.url));
+
 // Los BO viven en bo/<Subsistema>/<Clase>.js y exportan la clase con el mismo
-// nombre. La lista blanca traduce `Subsistema/Clase` al archivo real: solo se
-// cargan los BO declarados acá, nunca una ruta derivada del nombre que manda
-// el cliente.
-const ARCHIVOS_BO = {
-  "Seguridad/Sesion": { ruta: "../../bo/Seguridad/Sesion.js", exporta: "Sesion" },
-  "Seguridad/Menu": { ruta: "../../bo/Seguridad/Menu.js", exporta: "Menu" },
-  "Seguridad/Admin": { ruta: "../../bo/Seguridad/Admin.js", exporta: "Admin" },
-  "Seguridad/Usuario": { ruta: "../../bo/Seguridad/Usuario.js", exporta: "Usuario" },
-};
+// nombre. El descubrimiento se hace al arrancar (y en cada refreshBo()) leyendo
+// el directorio real con fs: el cliente nunca elige rutas, solo se importan
+// archivos que existían en bo/ en el último descubrimiento.
+const NOMBRE_VALIDO = /^[A-Za-z0-9]+$/;
 
 // Objeto de seguridad: resuelve los permisos en memoria (O(1) por petición) y
 // despacha los métodos de negocio por reflexión. Los mapas se cargan una vez
@@ -27,15 +29,77 @@ class Security {
   // Llave `Subsistema/Clase` → la clase del objeto de negocio ya importada.
   ClaseCache = new Map();
 
+  // Llave `Subsistema/Clase` → ruta absoluta del archivo .js del BO. Se arma
+  // con descubrimiento en disco (refreshBo), no con una lista escrita a mano.
+  BoMap = new Map();
+
   // Id del perfil 'Publico' (null si no existe): sus permisos los tiene
   // cualquiera, con o sin sesión.
   PublicProfileId = null;
 
-  constructor(conexion) {
+  constructor(conexion, { boDir = BO_DIR_POR_DEFECTO } = {}) {
     this.db = conexion;
+    this.boDir = boDir;
+    this.refreshBo();
   }
 
+  // Descubre los BO en disco: cada subcarpeta de bo/ es un subsistema y cada
+  // archivo .js dentro es una clase. Solo entran nombres que cumplan el regex
+  // alfanumérico (nada de ".", "..", ni separadores de ruta). Reemplaza el
+  // mapa de una vez y descarta la caché de clases para que se reimporten.
+  refreshBo = () => {
+    const nuevoMapa = new Map();
+
+    let subsistemas;
+    try {
+      subsistemas = readdirSync(this.boDir, { withFileTypes: true });
+    } catch (error) {
+      // Sin carpeta bo/ no hay BO: no es fatal, el servidor arranca sin ninguno.
+      if (error?.code !== "ENOENT") {
+        throw error;
+      }
+      subsistemas = [];
+    }
+
+    for (const subsistema of subsistemas) {
+      if (!subsistema.isDirectory() || !NOMBRE_VALIDO.test(subsistema.name)) {
+        continue;
+      }
+
+      let archivos;
+      try {
+        archivos = readdirSync(`${this.boDir}/${subsistema.name}`, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const archivo of archivos) {
+        if (!archivo.isFile() || !archivo.name.endsWith(".js")) {
+          continue;
+        }
+        const clase = archivo.name.slice(0, -".js".length);
+        if (!NOMBRE_VALIDO.test(clase)) {
+          continue;
+        }
+
+        nuevoMapa.set(
+          `${subsistema.name}/${clase}`,
+          `${this.boDir}/${subsistema.name}/${archivo.name}`,
+        );
+      }
+    }
+
+    this.BoMap = nuevoMapa;
+    this.ClaseCache = new Map();
+
+    console.log(`Objetos de negocio descubiertos: ${nuevoMapa.size}.`);
+    return nuevoMapa.size;
+  };
+
   loadPermission = async () => {
+    // Redescubre bo/ en cada carga: un BO nuevo se ve sin reiniciar.
+    this.refreshBo();
+
     const [metodos, opciones, publico] = await Promise.all([
       this.db.query(queries.loadPermissionMethods),
       this.db.query(queries.loadPermissionOptions),
@@ -186,14 +250,14 @@ class Security {
       };
     }
 
-    // 3. Reflexión. El archivo sale de la lista blanca ARCHIVOS_BO (nunca del
-    //    nombre crudo del cliente); la clase se cachea por `Subsistema/Clase`.
+    // 3. Reflexión. La ruta sale del BoMap (descubierto en disco al arrancar,
+    //    refrescable con refreshBo()); la clase se cachea por `Subsistema/Clase`.
     const llaveClase = `${subsystem}/${clase}`;
     let Clase = this.ClaseCache.get(llaveClase);
 
     if (!Clase) {
-      const archivo = ARCHIVOS_BO[llaveClase];
-      if (!archivo) {
+      const ruta = this.BoMap.get(llaveClase);
+      if (!ruta) {
         return {
           status: 501,
           body: { error: "Objeto de negocio no encontrado." },
@@ -201,8 +265,9 @@ class Security {
       }
 
       try {
-        const modulo = await import(new URL(archivo.ruta, import.meta.url));
-        Clase = modulo[archivo.exporta];
+        const modulo = await import(ruta);
+        // El archivo debe exportar la clase con el mismo nombre que el archivo.
+        Clase = modulo[clase];
       } catch (error) {
         // Solo "archivo no encontrado" es 501; un error de sintaxis debe
         // verse, no disfrazarse de método inexistente.
