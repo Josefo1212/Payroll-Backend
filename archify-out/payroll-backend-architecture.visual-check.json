@@ -6,9 +6,9 @@
   "status": "pass",
   "visualReview": "pending",
   "artifact": {
-    "path": "/home/josefo1212/JfPrograms/Web2/Payroll-Backend/payroll-backend-architecture.html",
-    "sha256": "ac9e4ac787cc20c58fd69d0f594d93c438f93c77bfdb0d30635bfa8cb8bb9d94",
-    "bytes": 818456
+    "path": "/home/josefo1212/JfPrograms/Web2/Payroll-Backend/archify-out/payroll-backend-architecture.html",
+    "sha256": "9bc43bcb8944c35cfb55b0c143b06329bd7d0ef3f24b42971eeb07d950768564",
+    "bytes": 818500
   },
   "state": {
     "detail": "read",
