@@ -1,17 +1,13 @@
--- Perfil de superusuario y su asignación al usuario de prueba.
--- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql
--- (Usuario ya no tiene Perfil_id; los perfiles viven en Usuario_Perfil).
--- El usuario admin_prueba y su clave bcrypt los crea db/seed-login.sql.
+-- Asigna el usuario de prueba (admin_prueba, creado por db/seed-login.sql) al
+-- perfil 'Superusuario'.
+-- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql y de
+-- db/seed-seguridad.sql (que crea el perfil 'Superusuario').
 -- Idempotente: se puede correr varias veces sin duplicar datos.
 --
 -- Nota: los permisos de métodos del perfil (Permiso_Metodo) se cargan con
 -- db/seed-seguridad.sql, cuando existan los métodos de cada subsistema.
 
 BEGIN;
-
-INSERT INTO perfil (nombre_perfil, descripcion)
-VALUES ('Superusuario', 'Acceso total al sistema')
-ON CONFLICT (nombre_perfil) DO NOTHING;
 
 -- El perfil temporal de prueba deja de aplicar: el usuario de prueba pasa a
 -- ser superusuario. La sesión todavía guarda un solo perfil, así que se quita

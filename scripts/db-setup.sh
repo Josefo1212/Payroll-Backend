@@ -8,12 +8,35 @@
 #
 # Uso:
 #   DATABASE_URL=postgresql://usuario:clave@host:5432/base ./scripts/db-setup.sh
+#   DATABASE_URL=... ./scripts/db-setup.sh --with-test-user
+#
+# Sin --with-test-user aplica solo migraciones y db/seed-seguridad.sql. Con la
+# bandera agrega db/seed-login.sql y db/seed-superusuario.sql (usuario de
+# prueba admin_prueba/Password123), que NUNCA deben ir a producción.
 #
 # No lleva credenciales: la conexión sale siempre de DATABASE_URL.
 
 set -euo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+CON_TEST_USER=false
+for arg in "$@"; do
+  case "$arg" in
+    --with-test-user) CON_TEST_USER=true ;;
+    *)
+      echo "Argumento desconocido: $arg" >&2
+      echo "Uso: $0 [--with-test-user]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Nunca tocar producción: los seeds y migraciones se corren a mano en dev/CI.
+if [[ "${NODE_ENV:-}" == "production" ]]; then
+  echo "ABORTADO: NODE_ENV=production. Este script no corre en producción." >&2
+  exit 1
+fi
 
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "Falta DATABASE_URL. Exportala antes de correr el script:" >&2
@@ -75,10 +98,18 @@ else
 fi
 
 # --- Seeds -----------------------------------------------------------------
-# Idempotentes (ON CONFLICT): se aplican siempre.
-aplicar "db/seed-login.sql"
-aplicar "db/seed-superusuario.sql"
+# db/seed-seguridad.sql es idempotente y crea el perfil 'Superusuario', así que
+# se aplica siempre. Los datos de prueba solo con --with-test-user.
 aplicar "db/seed-seguridad.sql"
+
+if [[ "$CON_TEST_USER" == true ]]; then
+  echo "Con --with-test-user: se agrega el usuario de prueba (solo desarrollo)."
+  aplicar "db/seed-login.sql"
+  aplicar "db/seed-superusuario.sql"
+else
+  echo "Sin --with-test-user: se omiten db/seed-login.sql y db/seed-superusuario.sql."
+  saltados+=("db/seed-login.sql" "db/seed-superusuario.sql")
+fi
 
 echo "Listo. Base de datos al día (${#aplicados[@]} aplicado(s), ${#saltados[@]} saltado(s))."
 

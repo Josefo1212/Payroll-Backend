@@ -1,21 +1,14 @@
 -- Seguridad: subsistema, clases (Sesion, Menu, Admin, Usuario), sus métodos y
 -- los perfiles 'Publico' y 'Superusuario' con sus permisos.
--- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql y de
--- db/seed-superusuario.sql (perfil Superusuario).
+-- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql.
 -- Idempotente: se puede correr varias veces sin duplicar datos.
+-- Crea por sí mismo el perfil 'Superusuario' (no depende de
+-- db/seed-superusuario.sql, que solo asigna el usuario de prueba).
 --
 -- Contraseña del hash de seed-login.sql: Password123
 -- (regenerar con: node scripts/hash-password.js "Password123")
 
 BEGIN;
-
--- Seguro: sin perfil Superusuario no tiene sentido el seed.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM perfil WHERE nombre_perfil = 'Superusuario') THEN
-    RAISE EXCEPTION 'Falta el perfil Superusuario. Corre antes db/seed-superusuario.sql.';
-  END IF;
-END $$;
 
 INSERT INTO subsistema (nombre, descripcion)
 VALUES ('Seguridad', 'Autenticación, sesiones y permisos')
@@ -97,6 +90,12 @@ ON CONFLICT (clase_id, nombre) DO NOTHING;
 -- solo Superusuario.
 INSERT INTO perfil (nombre_perfil, descripcion)
 VALUES ('Publico', 'Permisos de cualquier visitante, con o sin sesión')
+ON CONFLICT (nombre_perfil) DO NOTHING;
+
+-- Superusuario: acceso total. Se crea acá para que este seed sea autónomo
+-- (db/seed-superusuario.sql solo asigna el usuario de prueba a este perfil).
+INSERT INTO perfil (nombre_perfil, descripcion)
+VALUES ('Superusuario', 'Acceso total al sistema')
 ON CONFLICT (nombre_perfil) DO NOTHING;
 
 INSERT INTO permiso_metodo (perfil_id, metodo_id)
