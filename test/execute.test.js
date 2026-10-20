@@ -21,6 +21,7 @@ async function crearSecurity({ publicoId = null } = {}) {
   seguridad.setPermissionMethod("Seguridad", "Sesion", "logout", 9);
   seguridad.setPermissionMethod("Seguridad", "Sesion", "constructor", 3);
   seguridad.setPermissionMethod("Seguridad", "Sesion", "toString", 3);
+  seguridad.setPermissionMethod("Seguridad", "Admin", "reloadPermissions", 2);
   if (publicoId != null) {
     seguridad.setPermissionMethod("Seguridad", "Sesion", "login", publicoId);
   }
@@ -153,6 +154,26 @@ test("logout sin sesión responde 200 { ok: true }", async () => {
 
   assert.equal(status, 200);
   assert.deepEqual(body, { ok: true });
+});
+
+test("reloadPermissions: perfil sin permiso 403, Superusuario 200", async () => {
+  const { seguridad } = await crearSecurity();
+
+  const sinPermiso = crearReq({ userID: 10, profiles: [8] });
+  const rechazado = await seguridad.executeMethod(
+    peticion({ subsystem: "Seguridad", class: "Admin", method: "reloadPermissions", params: [] }),
+    sinPermiso,
+  );
+  assert.equal(rechazado.status, 403);
+
+  const superusuario = crearReq({ userID: 1, profiles: [2] });
+  const aceptado = await seguridad.executeMethod(
+    peticion({ subsystem: "Seguridad", class: "Admin", method: "reloadPermissions", params: [] }),
+    superusuario,
+  );
+  assert.equal(aceptado.status, 200);
+  assert.equal(typeof aceptado.body.metodos, "number");
+  assert.equal(typeof aceptado.body.opciones, "number");
 });
 
 test("getPermissionMethod/getPermissionOption consultan los mapas", async () => {

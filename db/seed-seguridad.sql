@@ -1,5 +1,5 @@
--- Seguridad: subsistema, clases Sesion y Menu, sus métodos y los perfiles
--- 'Publico' y 'Superusuario' con sus permisos de método.
+-- Seguridad: subsistema, clases Sesion, Menu y Admin, sus métodos y los
+-- perfiles 'Publico' y 'Superusuario' con sus permisos de método.
 -- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql.
 -- Idempotente: se puede correr varias veces sin duplicar datos.
 --
@@ -47,6 +47,20 @@ WHERE c.nombre = 'Menu'
   AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
+-- Clase Admin: tareas de administración. Solo Superusuario.
+INSERT INTO clase (subsistema_id, nombre, descripcion)
+SELECT s.id, 'Admin', 'Administración de la seguridad'
+FROM subsistema s
+WHERE s.nombre = 'Seguridad'
+ON CONFLICT (subsistema_id, nombre) DO NOTHING;
+
+INSERT INTO metodo (clase_id, nombre, descripcion)
+SELECT c.id, 'reloadPermissions', 'Recarga los permisos en memoria sin reiniciar'
+FROM clase c
+WHERE c.nombre = 'Admin'
+  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+ON CONFLICT (clase_id, nombre) DO NOTHING;
+
 -- Perfil público: lo usan los visitantes sin sesión (login, sessionExist y
 -- getSession están en la lista blanca del esquema del profe). logout también
 -- va acá: cerrar la propia sesión debe poder hacerlo cualquier perfil, no
@@ -75,11 +89,11 @@ WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre = 'getOptions'
 ON CONFLICT DO NOTHING;
 
--- Superusuario: permiso a TODOS los métodos (logout incluido).
+-- Superusuario: permiso a TODOS los métodos (logout y admin incluidos).
 INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
-JOIN clase c ON c.nombre IN ('Sesion', 'Menu')
+JOIN clase c ON c.nombre IN ('Sesion', 'Menu', 'Admin')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Superusuario'
 ON CONFLICT DO NOTHING;
