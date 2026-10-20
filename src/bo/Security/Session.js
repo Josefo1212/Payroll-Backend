@@ -1,6 +1,6 @@
-import bcrypt from "bcrypt";
 import { queries } from "../../queries/loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
+import { passwordService } from "../../services/PasswordService.js";
 import {
   MAX_INTENTOS_FALLIDOS as MAX_INTENTOS,
   MINUTOS_BLOQUEO,
@@ -16,8 +16,6 @@ const pausaCredenciales = async (retardoMax = RETARDO_MAX) => {
   const espera = minimo + Math.floor(Math.random() * (retardoMax - minimo + 1));
   await new Promise((resolve) => setTimeout(resolve, espera));
 };
-
-const HASH_DUMMY = "$2b$12$LybMgOxOi4wCQe0BWoOKXuuEnpNuJm8XqE5ORx8y1kLkuOfiu7zSO";
 
 const MENSAJE_CREDENCIALES = "Usuario o contraseña incorrectos";
 
@@ -104,21 +102,21 @@ export class Session {
     const usuario = rows[0];
 
     if (!usuario) {
-      await bcrypt.compare(password, HASH_DUMMY);
+      await passwordService.verificarContraDummy(password);
       await pausaCredenciales();
       console.log("Login fallido: credenciales inválidas.");
       throw new ErrorNegocio(MENSAJE_CREDENCIALES, 401);
     }
 
     if (!usuario.activo) {
-      await bcrypt.compare(password, HASH_DUMMY);
+      await passwordService.verificarContraDummy(password);
       await pausaCredenciales();
       console.log(`Login denegado: usuario ${usuario.id} inactivo.`);
       throw new ErrorNegocio("La cuenta está desactivada.", 403);
     }
 
     if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
-      await bcrypt.compare(password, HASH_DUMMY);
+      await passwordService.verificarContraDummy(password);
       await pausaCredenciales();
       console.log(`Login denegado: usuario ${usuario.id} bloqueado.`);
       throw new ErrorNegocio(
@@ -127,7 +125,7 @@ export class Session {
       );
     }
 
-    const coincide = await bcrypt.compare(password, usuario.password_hash);
+    const coincide = await passwordService.verificar(password, usuario.password_hash);
     if (!coincide) {
       const { rows: intentos } = await this.#db.query(queries.registerFailedAttempt, [
         usuario.id,

@@ -17,6 +17,7 @@
     { "id": "app", "type": "backend", "label": "Rutas /api", "sublabel": "routes.js · POST /execute", "tag": "Express 5", "pos": [240, 220], "size": [150, 72] },
     { "id": "security", "type": "security", "label": "Security", "sublabel": "executeMethod()", "tag": "forma→permiso→reflexión", "pos": [470, 220], "size": [160, 72] },
     { "id": "bo", "type": "backend", "label": "Objetos de negocio", "sublabel": "src/bo/Security", "tag": "Session · Menu · Admin · User", "pos": [710, 220], "size": [180, 72] },
+    { "id": "services", "type": "backend", "label": "Servicios", "sublabel": "src/services", "tag": "PasswordService", "pos": [710, 360], "size": [180, 68] },
     { "id": "db", "type": "backend", "label": "Componente de datos", "sublabel": "query() · transaction()", "tag": "Database.js", "pos": [970, 220], "size": [170, 72] },
     { "id": "neon", "type": "database", "label": "PostgreSQL · Neon", "sublabel": "pool máx 10", "brand": "postgresql", "tag": "sslmode=require", "pos": [1170, 220], "size": [170, 72] },
     { "id": "sesion", "type": "backend", "label": "Sesión + CORS", "sublabel": "cookie connect.sid", "tag": "express-session", "pos": [240, 60], "size": [150, 68] },
@@ -24,7 +25,7 @@
     { "id": "queries", "type": "backend", "label": "queries.yaml", "sublabel": "SQL parametrizado", "tag": "$1, $2", "pos": [970, 60], "size": [170, 68] }
   ],
   "boundaries": [
-    { "kind": "region", "label": "Backend monolítico · Node.js", "wraps": ["app", "sesion", "security", "permisos", "bo", "queries", "db"] },
+    { "kind": "region", "label": "Backend monolítico · Node.js", "wraps": ["app", "sesion", "security", "permisos", "bo", "services", "queries", "db"] },
     { "kind": "security-group", "label": "Esquema de seguridad", "wraps": ["security", "permisos", "bo"] }
   ],
   "connections": [
@@ -34,12 +35,14 @@
     { "id": "security-permisos", "from": "security", "to": "permisos", "label": "resuelve permiso", "variant": "security", "fromSide": "top", "toSide": "bottom" },
     { "id": "security-bo", "from": "security", "to": "bo", "label": "reflexión", "variant": "security", "labelDy": 56 },
     { "id": "bo-db", "from": "bo", "to": "db", "label": "solo los BO tocan la BD", "labelDy": 56 },
+    { "id": "bo-services", "from": "bo", "to": "services", "label": "lógica reutilizable", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [800, 306] },
     { "id": "db-queries", "from": "db", "to": "queries", "label": "carga al arrancar", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
     { "id": "db-neon", "from": "db", "to": "neon", "label": "SQL parametrizado", "labelDy": 56 }
   ],
   "cards": [
     { "dot": "cyan", "title": "Punto de entrada único", "items": ["app.js monta el router /api (routes.js)", "El cliente no arma rutas por entidad", "Manda { subsystem, class, method, params }"] },
     { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → permiso → reflexión → ejecución", "Permisos en mapas en memoria", "Llave: Subsistema_Clase_metodo_perfilId"] },
-    { "dot": "emerald", "title": "Datos", "items": ["Solo los objetos de negocio tocan la base", "A través del componente de datos, con parámetros", "Consultas en queries.yaml, leídas una vez"] }
+    { "dot": "emerald", "title": "Datos", "items": ["Solo los objetos de negocio tocan la base", "A través del componente de datos, con parámetros", "Consultas en queries.yaml, leídas una vez"] },
+    { "dot": "violet", "title": "Servicios", "items": ["Lógica reutilizable sin BD ni sesión", "PasswordService: hash (bcrypt) y política de claves", "Los BO orquestan; el servicio no conoce Express"] }
   ]
 }

@@ -1,31 +1,6 @@
-import bcrypt from "bcrypt";
 import { queries } from "../../queries/loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
-
-const MAX_BYTES_PASSWORD = 72;
-
-function validarPassword(password) {
-  if (typeof password !== "string" || password.length < 8) {
-    throw new ErrorNegocio(
-      "La contraseña debe tener al menos 8 caracteres.",
-      400,
-    );
-  }
-
-  if (Buffer.byteLength(password, "utf8") > MAX_BYTES_PASSWORD) {
-    throw new ErrorNegocio(
-      "La contraseña no puede superar los 72 bytes.",
-      400,
-    );
-  }
-
-  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
-    throw new ErrorNegocio(
-      "La contraseña debe incluir al menos una letra y un número.",
-      400,
-    );
-  }
-}
+import { passwordService } from "../../services/PasswordService.js";
 
 export class User {
   #db;
@@ -63,7 +38,7 @@ export class User {
       );
     }
 
-    validarPassword(password);
+    passwordService.validar(password);
 
     const solicitados = Array.isArray(perfiles)
       ? perfiles
@@ -114,7 +89,7 @@ export class User {
           );
         }
 
-        const passwordHash = await bcrypt.hash(password, 12);
+        const passwordHash = await passwordService.hashear(password);
 
         const persona = await cliente.query(queries.insertPersona, [
           cedula,
@@ -162,7 +137,7 @@ export class User {
       throw new ErrorNegocio("La contraseña actual es obligatoria.", 400);
     }
 
-    validarPassword(nueva);
+    passwordService.validar(nueva);
 
     const { rows } = await this.#db.query(queries.findPasswordHashById, [
       usuarioId,
@@ -172,12 +147,12 @@ export class User {
       throw new ErrorNegocio("Debes iniciar sesión.", 401);
     }
 
-    const coincide = await bcrypt.compare(actual, usuario.password_hash);
+    const coincide = await passwordService.verificar(actual, usuario.password_hash);
     if (!coincide) {
       throw new ErrorNegocio("La contraseña actual es incorrecta.", 401);
     }
 
-    const passwordHash = await bcrypt.hash(nueva, 12);
+    const passwordHash = await passwordService.hashear(nueva);
     await this.#db.query(queries.updatePassword, [passwordHash, usuarioId]);
 
     if (this.#req?.session) {
