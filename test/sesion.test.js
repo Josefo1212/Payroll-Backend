@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { pausaCredenciales } from "../bo/Seguridad/Sesion.js";
 import {
   crearDbFalso,
   peticion,
@@ -167,7 +168,6 @@ test("la contraseña nunca aparece en los logs", async () => {
 });
 
 test("con LOGIN_FAIL_DELAY_MS=0 un fallo de credenciales es inmediato", async () => {
-  assert.equal(process.env.LOGIN_FAIL_DELAY_MS, "0", "la prueba corre con la pausa desactivada");
   const { bo } = await crearBo();
 
   const inicio = Date.now();
@@ -177,6 +177,21 @@ test("con LOGIN_FAIL_DELAY_MS=0 un fallo de credenciales es inmediato", async ()
   });
 
   assert.ok(Date.now() - inicio < 150, "no espera la pausa configurable");
+});
+
+test("pausaCredenciales con un retardo alto espera al menos retardo/2", async () => {
+  const inicio = Date.now();
+  await pausaCredenciales(200);
+  assert.ok(
+    Date.now() - inicio >= 100,
+    "esperó al menos la mitad del retardo",
+  );
+});
+
+test("pausaCredenciales con 0 no espera", async () => {
+  const inicio = Date.now();
+  await pausaCredenciales(0);
+  assert.ok(Date.now() - inicio < 50, "sin retardo no espera");
 });
 
 test("hash de la clave de prueba corresponde al texto plano", async () => {

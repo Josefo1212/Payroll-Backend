@@ -10,13 +10,14 @@ const MINUTOS_BLOQUEO = Number(process.env.LOGIN_BLOCK_MINUTES || 15);
 // fuerza bruta. LOGIN_FAIL_DELAY_MS = 0 la desactiva (así corren las pruebas).
 const RETARDO_MAX = Number(process.env.LOGIN_FAIL_DELAY_MS ?? 400);
 
-// Espera aleatoria en [RETARDO_MAX/2, RETARDO_MAX]. Con 0 no espera.
-const pausaCredenciales = async () => {
-  if (!(RETARDO_MAX > 0)) {
+// Espera aleatoria en [retardoMax/2, retardoMax]. Con 0 no espera. Se recibe
+// el valor como parámetro para poder probar la espera sin depurar el módulo.
+const pausaCredenciales = async (retardoMax = RETARDO_MAX) => {
+  if (!(retardoMax > 0)) {
     return;
   }
-  const minimo = Math.floor(RETARDO_MAX / 2);
-  const espera = minimo + Math.floor(Math.random() * (RETARDO_MAX - minimo + 1));
+  const minimo = Math.floor(retardoMax / 2);
+  const espera = minimo + Math.floor(Math.random() * (retardoMax - minimo + 1));
   await new Promise((resolve) => setTimeout(resolve, espera));
 };
 
@@ -183,3 +184,7 @@ export class Sesion {
     };
   }
 }
+
+// Se exporta para las pruebas del tiempo de espera (no se ve por reflexión:
+// executeMethod solo acepta métodos propios del prototipo de la clase).
+export { pausaCredenciales };
