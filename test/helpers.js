@@ -28,8 +28,15 @@ const USUARIO_OK = {
 };
 
 // Fábrica de Database falso. `opciones.usuario` fija la fila de
-// findUserByUsername; los intentos/bloqueos que se registran en memoria.
-function crearDbFalso({ usuario = USUARIO_OK, perfiles = [1, 2], publicoId = null } = {}) {
+// findUserByUsername; `opciones.opciones` las filas de loadPermissionOptions
+// (cada una: { subsistema, opcion_id, opcion, orden, descripcion, perfil_id });
+// los intentos/bloqueos que se registran en memoria.
+function crearDbFalso({
+  usuario = USUARIO_OK,
+  perfiles = [1, 2],
+  publicoId = null,
+  opciones = [],
+} = {}) {
   const llamadas = [];
   const estado = {
     intentos: usuario?.intentos_fallidos ?? 0,
@@ -46,7 +53,7 @@ function crearDbFalso({ usuario = USUARIO_OK, perfiles = [1, 2], publicoId = nul
         return { rows: [] };
       }
       if (texto === queries.loadPermissionOptions) {
-        return { rows: [] };
+        return { rows: opciones };
       }
       if (texto === queries.findPublicProfileId) {
         return { rows: publicoId == null ? [] : [{ id: publicoId }] };

@@ -1,4 +1,4 @@
--- Seguridad: subsistema, clase Sesion, sus métodos y los perfiles
+-- Seguridad: subsistema, clases Sesion y Menu, sus métodos y los perfiles
 -- 'Publico' y 'Superusuario' con sus permisos de método.
 -- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql.
 -- Idempotente: se puede correr varias veces sin duplicar datos.
@@ -31,6 +31,22 @@ WHERE c.nombre = 'Sesion'
   AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
+-- Clase Menu: las opciones visibles del usuario. Se autoriza a 'Publico'
+-- porque el filtrado real por perfil lo hace getOptions() con los perfiles de
+-- la sesión; sin sesión devuelve [].
+INSERT INTO clase (subsistema_id, nombre, descripcion)
+SELECT s.id, 'Menu', 'Opciones visibles del usuario'
+FROM subsistema s
+WHERE s.nombre = 'Seguridad'
+ON CONFLICT (subsistema_id, nombre) DO NOTHING;
+
+INSERT INTO metodo (clase_id, nombre, descripcion)
+SELECT c.id, 'getOptions', 'Devuelve las opciones visibles para la sesión'
+FROM clase c
+WHERE c.nombre = 'Menu'
+  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Seguridad')
+ON CONFLICT (clase_id, nombre) DO NOTHING;
+
 -- Perfil público: lo usan los visitantes sin sesión (login, sessionExist y
 -- getSession están en la lista blanca del esquema del profe). logout también
 -- va acá: cerrar la propia sesión debe poder hacerlo cualquier perfil, no
@@ -48,11 +64,22 @@ WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre IN ('login', 'logout', 'sessionExist', 'getSession')
 ON CONFLICT DO NOTHING;
 
+-- getOptions es público: sin sesión devuelve []; con sesión, el propio BO
+-- filtra por los perfiles.
+INSERT INTO permiso_metodo (perfil_id, metodo_id)
+SELECT pf.id, m.id
+FROM perfil pf
+JOIN clase c ON c.nombre = 'Menu'
+JOIN metodo m ON m.clase_id = c.id
+WHERE pf.nombre_perfil = 'Publico'
+  AND m.nombre = 'getOptions'
+ON CONFLICT DO NOTHING;
+
 -- Superusuario: permiso a TODOS los métodos (logout incluido).
 INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
-JOIN clase c ON c.nombre = 'Sesion'
+JOIN clase c ON c.nombre IN ('Sesion', 'Menu')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Superusuario'
 ON CONFLICT DO NOTHING;

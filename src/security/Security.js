@@ -47,6 +47,7 @@ class Security {
         orden: fila.orden,
         descripcion: fila.descripcion,
         subsistema: fila.subsistema,
+        perfilId: fila.perfil_id,
       });
     }
 
@@ -83,6 +84,34 @@ class Security {
   getPermissionMethod = (key) => this.PermissionMethodMap.has(key);
 
   getPermissionOption = (key) => this.PermissionOptionMap.get(key) ?? null;
+
+  // Opciones visibles para un conjunto de perfiles, sin duplicados (una
+  // opción compartida por dos perfiles aparece una sola vez) y ordenadas por
+  // subsistema y luego por `orden`. El BO no conoce las claves internas del
+  // mapa: pide acá y recibe la forma pública.
+  getOptionsByProfiles = (perfilIds = []) => {
+    const ids = new Set(perfilIds);
+    const porId = new Map();
+
+    for (const datos of this.PermissionOptionMap.values()) {
+      if (ids.has(datos.perfilId)) {
+        porId.set(datos.id, datos);
+      }
+    }
+
+    return [...porId.values()]
+      .map(({ id, nombre, descripcion, orden, subsistema }) => ({
+        id,
+        nombre,
+        descripcion,
+        orden,
+        subsistema,
+      }))
+      .sort(
+        (a, b) =>
+          a.subsistema.localeCompare(b.subsistema) || a.orden - b.orden,
+      );
+  };
 
   // Despacho de un método de negocio. El orden es innegociable:
   // 1) forma, 2) permiso, 3) reflexión y 4) ejecución. Nunca se invierte:
