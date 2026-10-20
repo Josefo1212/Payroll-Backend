@@ -5,5 +5,4 @@ import { parse } from "yaml";
 
 const directorio = dirname(fileURLToPath(import.meta.url));
 
-// Las consultas viven en queries.yaml y se leen una sola vez al arrancar.
 export const queries = parse(readFileSync(join(directorio, "queries.yaml"), "utf8"));

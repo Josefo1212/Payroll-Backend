@@ -9,9 +9,6 @@ const startServer = async () => {
   try {
     await security.loadPermission();
 
-    // Sin el perfil Publico los métodos de login/logout quedan sin permiso y
-    // todo responde 401 sin explicación. Es un error de despliegue: fallar
-    // al arrancar es más claro que arrancar a medias.
     if (security.PublicProfileId == null) {
       throw new Error(
         "No existe el perfil 'Publico'. Aplicá db/seed-seguridad.sql antes de arrancar.",

@@ -9,8 +9,6 @@ dotenv.config();
 
 const esProduccion = process.env.NODE_ENV === "production";
 
-// En producción el secreto de sesión es obligatorio: firmar con uno por
-// defecto permite falsificar cookies. En desarrollo se admite uno local.
 if (esProduccion && !process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET es obligatoria en producción.");
 }
@@ -23,7 +21,6 @@ app.use(cors({
   credentials: true,
 }));
 
-// express-session configuration
 app.use(session({
   name: "connect.sid",
   secret: process.env.SESSION_SECRET || "secreto_solo_desarrollo",

@@ -1,9 +1,6 @@
 import { pool } from "../config/database.js";
 import { datosSegurosDeError } from "../errors/logError.js";
 
-// Componente único de acceso a datos. Los objetos de negocio y los servicios
-// no usan el pool suelto: pasan por acá para tener el mismo manejo de errores
-// y transacciones.
 class Database {
   constructor(conexiones) {
     this.pool = conexiones;
@@ -21,8 +18,6 @@ class Database {
 
       return resultado;
     } catch (error) {
-      // Nunca se registra el error completo: pg trae en `detail` los valores
-      // que violaron una restricción (cédula, email, etc.).
       console.error("Error ejecutando query:", {
         texto,
         ...datosSegurosDeError(error),

@@ -6,12 +6,8 @@ import {
   MINUTOS_BLOQUEO,
 } from "../../config/security.js";
 
-// Pausa uniforme (200–400 ms) solo en los fallos de credenciales, para frenar
-// fuerza bruta. LOGIN_FAIL_DELAY_MS = 0 la desactiva (así corren las pruebas).
 const RETARDO_MAX = Number(process.env.LOGIN_FAIL_DELAY_MS ?? 400);
 
-// Espera aleatoria en [retardoMax/2, retardoMax]. Con 0 no espera. Se recibe
-// el valor como parámetro para poder probar la espera sin depurar el módulo.
 const pausaCredenciales = async (retardoMax = RETARDO_MAX) => {
   if (!(retardoMax > 0)) {
     return;
@@ -21,16 +17,10 @@ const pausaCredenciales = async (retardoMax = RETARDO_MAX) => {
   await new Promise((resolve) => setTimeout(resolve, espera));
 };
 
-// Hash bcrypt de un valor aleatorio: se compara cuando el usuario no existe
-// para que el tiempo de respuesta no revele cuál de los dos fallos fue.
 const HASH_DUMMY = "$2b$12$LybMgOxOi4wCQe0BWoOKXuuEnpNuJm8XqE5ORx8y1kLkuOfiu7zSO";
 
 const MENSAJE_CREDENCIALES = "Usuario o contraseña incorrectos";
 
-// Objeto de negocio de autenticación: se invoca por el endpoint único de
-// reflexión, no por rutas REST. Recibe (db, req); la sesión se lee de
-// this.req.session en cada llamada porque express-session la reemplaza al
-// hacer regenerate.
 export class Session {
   #db;
   #req;
@@ -39,8 +29,6 @@ export class Session {
     this.#db = db;
     this.#req = req;
   }
-
-  // --- Métodos públicos (visibles por reflexión) -------------------------
 
   sessionExist() {
     return Boolean(this.#req?.session?.userID);
@@ -61,7 +49,6 @@ export class Session {
   }
 
   async login(username, password) {
-    // Sesión vigente: se devuelve tal cual, sin volver a autenticar.
     if (this.sessionExist()) {
       return this.getSession();
     }
@@ -70,7 +57,6 @@ export class Session {
 
     await this.#resetAttemptsAndAccess(usuario.id);
 
-    // Los ids autorizan en los mapas; la forma completa se devuelve al cliente.
     const { rows } = await this.#db.query(queries.findProfilesByUserId, [usuario.id]);
     const profiles = rows.map((fila) => ({
       id: fila.perfil_id,
@@ -89,7 +75,6 @@ export class Session {
   }
 
   async logout() {
-    // Sin sesión no hay nada que destruir: es idempotente y no debe fallar.
     const sesion = this.#req?.session;
     if (!sesion?.userID) {
       return { ok: true };
@@ -103,10 +88,6 @@ export class Session {
     return { ok: true };
   }
 
-  // --- Métodos privados (no se ven por reflexión) ------------------------
-
-  // Valida la forma y busca el usuario. Siempre compara contra algo (hash
-  // dummy si el usuario no existe) para no filtrar existencia por tiempo.
   async #authenticate(username, password) {
     if (
       typeof username !== "string" ||
@@ -130,9 +111,6 @@ export class Session {
     }
 
     if (!usuario.activo) {
-      // Mismo costo que un fallo de credenciales: comparar contra el hash
-      // dummy y pausar, para que el tiempo no delate que la cuenta está
-      // inactiva.
       await bcrypt.compare(password, HASH_DUMMY);
       await pausaCredenciales();
       console.log(`Login denegado: usuario ${usuario.id} inactivo.`);
@@ -140,7 +118,6 @@ export class Session {
     }
 
     if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
-      // Idem: el tiempo no debe distinguir una cuenta bloqueada.
       await bcrypt.compare(password, HASH_DUMMY);
       await pausaCredenciales();
       console.log(`Login denegado: usuario ${usuario.id} bloqueado.`);
@@ -172,9 +149,6 @@ export class Session {
     await this.#db.query(queries.resetAttemptsAndAccess, [usuarioId]);
   }
 
-  // regenerate + save promisificados. Hay que hacerlo SIEMPRE sobre el
-  // objeto req: al regenerar, express-session reemplaza req.session por uno
-  // nuevo, y es sobre ese nuevo donde se guardan los datos.
   async #createSession(usuario, profiles) {
     await new Promise((resolve, reject) => {
       this.#req.session.regenerate((error) => (error ? reject(error) : resolve()));
@@ -190,7 +164,6 @@ export class Session {
       this.#req.session.save((error) => (error ? reject(error) : resolve()));
     });
 
-    // Jamás se devuelve password_hash.
     return {
       userID: usuario.id,
       userName: this.#req.session.userName,
@@ -200,6 +173,4 @@ export class Session {
   }
 }
 
-// Se exporta para las pruebas del tiempo de espera (no se ve por reflexión:
-// executeMethod solo acepta métodos propios del prototipo de la clase).
 export { pausaCredenciales };

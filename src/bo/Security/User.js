@@ -2,13 +2,8 @@ import bcrypt from "bcrypt";
 import { queries } from "../../queries/loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 
-// Límite duro de bcrypt: por encima de 72 bytes la clave se trunca en
-// silencio, así que se rechaza explícitamente.
 const MAX_BYTES_PASSWORD = 72;
 
-// Política mínima de contraseña: 8+ caracteres, con al menos una letra y un
-// número, y como máximo 72 bytes (UTF-8). Lanza ErrorNegocio 400 con un
-// mensaje claro en el primer requisito incumplido.
 function validarPassword(password) {
   if (typeof password !== "string" || password.length < 8) {
     throw new ErrorNegocio(
@@ -32,10 +27,6 @@ function validarPassword(password) {
   }
 }
 
-// Objeto de negocio del subsistema Security. Los métodos van en el
-// prototipo (método normal, no función flecha): executeMethod los busca
-// con hasOwnProperty sobre Clase.prototype. Recibe (db, req); la sesión se
-// lee de this.req.session (express-session la reemplaza al hacer regenerate).
 export class User {
   #db;
   #req;
@@ -45,9 +36,6 @@ export class User {
     this.#req = req;
   }
 
-  // Registra una Persona y su Usuario en una sola transacción: si algo
-  // falla a mitad de camino no queda persona sin usuario ni usuario sin
-  // persona. `datos` viene del arreglo params de executeMethod.
   async registrar(datos) {
     const {
       cedula,
@@ -77,8 +65,6 @@ export class User {
 
     validarPassword(password);
 
-    // Un usuario sin perfiles no puede entrar: el login lo rechaza con 403.
-    // Se acepta `perfiles` (arreglo) o `perfil_id` (uno solo).
     const solicitados = Array.isArray(perfiles)
       ? perfiles
       : perfil_id != null
@@ -151,8 +137,6 @@ export class User {
           passwordHash,
         ]);
 
-        // El vínculo N:M va en la misma transacción: o queda el usuario con
-        // sus perfiles, o no queda nada.
         await cliente.query(queries.insertUsuarioPerfil, [
           usuario.rows[0].id,
           perfilesAsignados,
@@ -161,9 +145,6 @@ export class User {
         return { ...usuario.rows[0], perfiles: perfilesAsignados };
       });
     } catch (error) {
-      // Carrera entre el EXISTS y el INSERT: si otro proceso insertó lo
-      // mismo en el medio, el UNIQUE de la tabla manda y se traduce al
-      // mismo 409 del chequeo explícito.
       if (error?.code === "23505") {
         throw new ErrorNegocio("Datos duplicados: cédula, email o username ya registrados.", 409);
       }
@@ -171,8 +152,6 @@ export class User {
     }
   }
 
-  // Cambia la contraseña del usuario autenticado. No recibe el id: sale de la
-  // sesión, así nadie puede cambiar la clave de otro pasando un id.
   async cambiarClave(actual, nueva) {
     const usuarioId = this.#req?.session?.userID;
     if (!usuarioId) {
