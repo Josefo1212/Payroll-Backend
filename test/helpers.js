@@ -103,7 +103,12 @@ function crearDbFalso({
         };
       }
       if (texto === queries.findProfilesByUserId) {
-        return { rows: perfiles.map((perfil_id) => ({ perfil_id })) };
+        return {
+          rows: perfiles.map((perfil_id) => ({
+            perfil_id,
+            nombre_perfil: perfil_id === 2 ? "Superusuario" : `Perfil ${perfil_id}`,
+          })),
+        };
       }
       if (texto === queries.findSessionState) {
         const configurada = sesionPorUsuario?.[params[0]];
@@ -112,6 +117,10 @@ function crearDbFalso({
             configurada ?? {
               activo: true,
               perfiles,
+              perfiles_detalle: perfiles.map((id) => ({
+                id,
+                nombre: id === 2 ? "Superusuario" : `Perfil ${id}`,
+              })),
               debe_cambiar_clave: Boolean(usuario?.debe_cambiar_clave),
             },
           ],

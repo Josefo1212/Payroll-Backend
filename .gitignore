@@ -44,3 +44,6 @@ docs/
 *.md
 
 specs/
+
+# graphify: grafo de conocimiento derivado del código (se regenera, no se versiona)
+graphify-out/

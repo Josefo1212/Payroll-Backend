@@ -99,7 +99,13 @@ test("sesión de un usuario desactivado: 401 y destruye la sesión", async () =>
 
 test("la sesión usa los perfiles actuales de la base, no los de la cookie", async () => {
   const { seguridad } = await crearSecurity({
-    sesionPorUsuario: { 10: { activo: true, perfiles: [2] } },
+    sesionPorUsuario: {
+      10: {
+        activo: true,
+        perfiles: [2],
+        perfiles_detalle: [{ id: 2, nombre: "Superusuario" }],
+      },
+    },
   });
   seguridad.setPermissionMethod("Security", "Session", "getSession", 2);
 
@@ -111,7 +117,7 @@ test("la sesión usa los perfiles actuales de la base, no los de la cookie", asy
   );
 
   assert.equal(status, 200);
-  assert.deepEqual(body.profiles, [2]);
+  assert.deepEqual(body.profiles, [{ id: 2, nombre: "Superusuario" }]);
   assert.deepEqual(req.session.profiles, [2]);
 });
 

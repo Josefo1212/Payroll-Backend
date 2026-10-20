@@ -55,7 +55,7 @@ export class Session {
     return {
       userID: sesion.userID,
       userName: sesion.userName,
-      profiles: Array.isArray(sesion.profiles) ? sesion.profiles : [],
+      profiles: Array.isArray(sesion.detallesPerfiles) ? sesion.detallesPerfiles : [],
       debeCambiarClave: Boolean(sesion.debeCambiarClave),
     };
   }
@@ -70,9 +70,12 @@ export class Session {
 
     await this.#resetAttemptsAndAccess(usuario.id);
 
-    // Los perfiles son los que autorizan en los mapas de permisos.
+    // Los ids autorizan en los mapas; la forma completa se devuelve al cliente.
     const { rows } = await this.#db.query(queries.findProfilesByUserId, [usuario.id]);
-    const profiles = rows.map((fila) => fila.perfil_id);
+    const profiles = rows.map((fila) => ({
+      id: fila.perfil_id,
+      nombre: fila.nombre_perfil,
+    }));
 
     if (profiles.length === 0) {
       console.log(`Login fallido: el usuario ${usuario.id} no tiene perfiles asignados.`);
@@ -179,7 +182,8 @@ export class Session {
 
     this.#req.session.userID = usuario.id;
     this.#req.session.userName = usuario.nombre || usuario.username;
-    this.#req.session.profiles = profiles;
+    this.#req.session.profiles = profiles.map(({ id }) => id);
+    this.#req.session.detallesPerfiles = profiles;
     this.#req.session.debeCambiarClave = Boolean(usuario.debe_cambiar_clave);
 
     await new Promise((resolve, reject) => {

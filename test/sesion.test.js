@@ -30,7 +30,10 @@ test("login ok: crea la sesión sin exponer el hash", async () => {
   assert.deepEqual(resultado, {
     userID: 1,
     userName: "Admin Prueba",
-    profiles: [2, 3],
+    profiles: [
+      { id: 2, nombre: "Superusuario" },
+      { id: 3, nombre: "Perfil 3" },
+    ],
     debeCambiarClave: false,
   });
   assert.equal(req.session.userID, 1);
@@ -163,14 +166,19 @@ test("tras vencer el bloqueo quedan disponibles todos los intentos", async () =>
 });
 
 test("login con sesión existente: devuelve la sesión sin autenticar", async () => {
-  const { bo, dbFalso } = await crearBo({ userID: 9, userName: "Ya", profiles: [7] });
+  const { bo, dbFalso } = await crearBo({
+    userID: 9,
+    userName: "Ya",
+    profiles: [7],
+    detallesPerfiles: [{ id: 7, nombre: "Perfil 7" }],
+  });
 
   const resultado = await bo.login("admin", "Password123");
 
   assert.deepEqual(resultado, {
     userID: 9,
     userName: "Ya",
-    profiles: [7],
+    profiles: [{ id: 7, nombre: "Perfil 7" }],
     debeCambiarClave: false,
   });
   assert.equal(
@@ -181,13 +189,18 @@ test("login con sesión existente: devuelve la sesión sin autenticar", async ()
 });
 
 test("getSession devuelve la sesión; sessionExist() es booleano", async () => {
-  const { bo } = await crearBo({ userID: 1, userName: "Admin", profiles: [2] });
+  const { bo } = await crearBo({
+    userID: 1,
+    userName: "Admin",
+    profiles: [2],
+    detallesPerfiles: [{ id: 2, nombre: "Superusuario" }],
+  });
 
   assert.equal(bo.sessionExist(), true);
   assert.deepEqual(bo.getSession(), {
     userID: 1,
     userName: "Admin",
-    profiles: [2],
+    profiles: [{ id: 2, nombre: "Superusuario" }],
     debeCambiarClave: false,
   });
 

@@ -260,6 +260,9 @@ class Security {
       }
 
       req.session.profiles = Array.isArray(estado.perfiles) ? estado.perfiles : [];
+      req.session.detallesPerfiles = Array.isArray(estado.perfiles_detalle)
+        ? estado.perfiles_detalle
+        : [];
       req.session.debeCambiarClave = Boolean(estado.debe_cambiar_clave);
     }
 
