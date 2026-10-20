@@ -3,8 +3,35 @@ import session from "express-session";
 import bcrypt from "bcrypt";
 import { db } from "../src/database/Database.js";
 import { queries } from "../src/queries/loader.js";
-import { Security } from "../src/security/Security.js";
+import { Security, security } from "../src/security/Security.js";
 import { Sesion } from "../bo/Seguridad/Sesion.js";
+
+// ---------------------------------------------------------------------------
+// Guardián anti-BD-real: al importar este módulo, el singleton `security`
+// deja de apuntar al pool real. Si una prueba u objeto de negocio llega a
+// usar la BD sin haber inyectado un Database falso, falla con un mensaje
+// claro en vez de intentar conectarse.
+// ---------------------------------------------------------------------------
+const dbProhibido = {
+  query: async () => {
+    throw new Error(
+      "prueba sin Database falso: inyectá un Database falso en security.db o pasá uno al BO",
+    );
+  },
+  transaction: async () => {
+    throw new Error(
+      "prueba sin Database falso: inyectá un Database falso en security.db o pasá uno al BO",
+    );
+  },
+};
+
+// Solo se instala si todavía es el pool real (evita pisar el fake de otra
+// prueba que importe este módulo después).
+if (security.db === db) {
+  security.db = dbProhibido;
+}
+
+export { dbProhibido };
 
 // ---------------------------------------------------------------------------
 // Database falso: responde a las consultas por su texto SQL (el mismo que

@@ -1,5 +1,6 @@
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { security } from "../src/security/Security.js";
 import {
   crearDbFalso,
   crearReq,
@@ -7,6 +8,15 @@ import {
   Security,
   queries,
 } from "./helpers.js";
+
+// El BO Admin usa el singleton `security`, no la instancia local de cada
+// prueba. Guardamos su db para restaurarlo y apuntarlo a un fake durante las
+// pruebas que ejecutan Admin.reloadPermissions.
+const dbOriginal = security.db;
+afterEach(() => {
+  security.db = dbOriginal;
+  security.ClaseCache = new Map();
+});
 
 // Carga los mapas de permisos con permiso para login (perfil 1), logout
 // (perfiles 2 y 9, este último NO es Superusuario) y un perfil público con id
@@ -158,6 +168,11 @@ test("logout sin sesión responde 200 { ok: true }", async () => {
 
 test("reloadPermissions: perfil sin permiso 403, Superusuario 200", async () => {
   const { seguridad } = await crearSecurity();
+
+  // Admin.reloadPermissions llama a security.loadPermission(): que use el
+  // fake para no abrir conexión.
+  security.db = crearDbFalso({});
+  security.ClaseCache = new Map();
 
   const sinPermiso = crearReq({ userID: 10, profiles: [8] });
   const rechazado = await seguridad.executeMethod(
