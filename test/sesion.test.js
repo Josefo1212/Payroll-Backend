@@ -1,5 +1,6 @@
-import { test } from "node:test";
+import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import bcrypt from "bcrypt";
 import { pausaCredenciales } from "../bo/Seguridad/Sesion.js";
 import {
   crearDbFalso,
@@ -9,6 +10,10 @@ import {
   HASH_CLAVE,
   USUARIO_OK,
 } from "./helpers.js";
+
+// Espía de bcrypt.compare: el BO importa el mismo objeto default del módulo,
+// así que reemplazar el método se refleja en sus llamadas.
+afterEach(() => mock.restoreAll());
 
 // Construye un BO sobre una petición con sesión real (express-session falso).
 async function crearBo(sesionInicial = {}, opciones = {}) {
@@ -60,6 +65,20 @@ test("usuario inactivo: 403", async () => {
   });
 });
 
+test("usuario inactivo compara contra el hash dummy (mismo costo)", async () => {
+  const espia = mock.method(bcrypt, "compare", async () => false);
+  const { bo } = await crearBo({}, { usuario: { ...USUARIO_OK, activo: false } });
+
+  await assert.rejects(() => bo.login("admin", "Password123"), (error) => {
+    assert.equal(error.status, 403);
+    return true;
+  });
+
+  assert.equal(espia.mock.callCount(), 1);
+  assert.equal(espia.mock.calls[0].arguments[0], "Password123");
+  assert.notEqual(espia.mock.calls[0].arguments[1], USUARIO_OK.password_hash);
+});
+
 test("usuario bloqueado: 423", async () => {
   const futuro = new Date(Date.now() + 60_000);
   const { bo } = await crearBo({}, { usuario: { ...USUARIO_OK, bloqueado_hasta: futuro } });
@@ -68,6 +87,23 @@ test("usuario bloqueado: 423", async () => {
     assert.equal(error.status, 423);
     return true;
   });
+});
+
+test("usuario bloqueado compara contra el hash dummy (mismo costo)", async () => {
+  const espia = mock.method(bcrypt, "compare", async () => false);
+  const futuro = new Date(Date.now() + 60_000);
+  const { bo } = await crearBo(
+    {},
+    { usuario: { ...USUARIO_OK, bloqueado_hasta: futuro } },
+  );
+
+  await assert.rejects(() => bo.login("admin", "Password123"), (error) => {
+    assert.equal(error.status, 423);
+    return true;
+  });
+
+  assert.equal(espia.mock.callCount(), 1);
+  assert.notEqual(espia.mock.calls[0].arguments[1], USUARIO_OK.password_hash);
 });
 
 test("bloqueo al llegar al máximo de intentos", async () => {

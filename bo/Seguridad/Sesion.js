@@ -126,11 +126,19 @@ export class Sesion {
     }
 
     if (!usuario.activo) {
+      // Mismo costo que un fallo de credenciales: comparar contra el hash
+      // dummy y pausar, para que el tiempo no delate que la cuenta está
+      // inactiva.
+      await bcrypt.compare(password, HASH_DUMMY);
+      await pausaCredenciales();
       console.log(`Login denegado: usuario ${usuario.id} inactivo.`);
       throw new ErrorNegocio("La cuenta está desactivada.", 403);
     }
 
     if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
+      // Idem: el tiempo no debe distinguir una cuenta bloqueada.
+      await bcrypt.compare(password, HASH_DUMMY);
+      await pausaCredenciales();
       console.log(`Login denegado: usuario ${usuario.id} bloqueado.`);
       throw new ErrorNegocio(
         "La cuenta está bloqueada temporalmente por intentos fallidos.",
