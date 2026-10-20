@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Orden de despliegue de la base de datos del sistema de nómina.
 #
-# Aplica las migraciones y los seeds en el orden que exige el esquema. Cada
-# archivo es idempotente (los seeds usan ON CONFLICT), así que el script se
-# puede correr varias veces sobre la misma base.
+# Aplica las migraciones y los seeds en el orden que exige el esquema. Es
+# repetible: los seeds son idempotentes (ON CONFLICT) y las migraciones se
+# saltan si detecta que ya están aplicadas, así que se puede correr varias
+# veces sobre la misma base sin fallar.
 #
 # Uso:
 #   DATABASE_URL=postgresql://usuario:clave@host:5432/base ./scripts/db-setup.sh
@@ -25,29 +26,59 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 1
 fi
 
-# Orden de despliegue. 001 crea las tablas base; 002 el esquema de seguridad;
-# 003 pone Blocked_hasta/Ultimo_acceso con zona horaria. Después los seeds:
-# login (usuario de prueba), superusuario (perfil + asignación) y seguridad
-# (subsistema, clases, métodos, permisos y opciones).
-ARCHIVOS=(
-  "db/migrations/001_init.sql"
-  "db/migrations/002_esquema_seguridad.sql"
-  "db/migrations/003_zona_horaria_seguridad.sql"
-  "db/seed-login.sql"
-  "db/seed-superusuario.sql"
-  "db/seed-seguridad.sql"
-)
+# Consulta un valor escalar. `-tA` quita encabezados y alineación.
+consulta() {
+  psql "$DATABASE_URL" -tAc "$1"
+}
 
-echo "Aplicando ${#ARCHIVOS[@]} archivo(s) sobre la base de DATABASE_URL…"
+# ¿Existe la tabla pública `tabla`?
+tabla_existe() {
+  [[ "$(consulta "SELECT to_regclass('public.$1') IS NOT NULL")" == "t" ]]
+}
 
-for archivo in "${ARCHIVOS[@]}"; do
-  ruta="$RAIZ/$archivo"
+# ¿Ya está la migración 003? (Bloqueado_hasta como timestamptz).
+zona_horaria_lista() {
+  [[ "$(consulta "SELECT (data_type = 'timestamp with time zone') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuario' AND column_name = 'bloqueado_hasta'")" == "t" ]]
+}
+
+saltados=()
+aplicados=()
+
+aplicar() {
+  local archivo="$1"
+  local ruta="$RAIZ/$archivo"
   if [[ ! -f "$ruta" ]]; then
     echo "No existe $archivo" >&2
     exit 1
   fi
   echo "→ $archivo"
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$ruta"
-done
+  aplicados+=("$archivo")
+}
 
-echo "Listo. Base de datos al día."
+# --- Migraciones -----------------------------------------------------------
+# El esquema base (001) crea `perfil`; el de seguridad (002) crea `subsistema`.
+# Si ambos existen, las migraciones ya se aplicaron y se saltan.
+if tabla_existe perfil && tabla_existe subsistema; then
+  echo "El esquema base ya está aplicado: se saltan 001 y 002."
+  saltados+=("db/migrations/001_init.sql" "db/migrations/002_esquema_seguridad.sql")
+else
+  aplicar "db/migrations/001_init.sql"
+  aplicar "db/migrations/002_esquema_seguridad.sql"
+fi
+
+if zona_horaria_lista; then
+  echo "Bloqueado_hasta ya es timestamptz: se salta 003."
+  saltados+=("db/migrations/003_zona_horaria_seguridad.sql")
+else
+  aplicar "db/migrations/003_zona_horaria_seguridad.sql"
+fi
+
+# --- Seeds -----------------------------------------------------------------
+# Idempotentes (ON CONFLICT): se aplican siempre.
+aplicar "db/seed-login.sql"
+aplicar "db/seed-superusuario.sql"
+aplicar "db/seed-seguridad.sql"
+
+echo "Listo. Base de datos al día (${#aplicados[@]} aplicado(s), ${#saltados[@]} saltado(s))."
+
