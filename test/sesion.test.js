@@ -118,6 +118,14 @@ test("logout destruye la sesión", async () => {
   assert.equal(req.session.userName, undefined);
 });
 
+test("logout sin sesión devuelve { ok: true } sin lanzar", async () => {
+  const { bo } = await crearBo();
+
+  const resultado = await bo.logout();
+
+  assert.deepEqual(resultado, { ok: true });
+});
+
 test("login con credenciales vacías: 400", async () => {
   const { bo } = await crearBo();
 

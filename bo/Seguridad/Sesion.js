@@ -70,11 +70,17 @@ export class Sesion {
   }
 
   async logout() {
-    const userID = this.#req?.session?.userID;
+    // Sin sesión no hay nada que destruir: es idempotente y no debe fallar.
+    const sesion = this.#req?.session;
+    if (!sesion?.userID) {
+      return { ok: true };
+    }
+
+    const userID = sesion.userID;
     await new Promise((resolve, reject) => {
-      this.#req.session.destroy((error) => (error ? reject(error) : resolve()));
+      sesion.destroy((error) => (error ? reject(error) : resolve()));
     });
-    console.log(`Logout: usuario ${userID ?? "desconocido"}.`);
+    console.log(`Logout: usuario ${userID}.`);
     return { ok: true };
   }
 

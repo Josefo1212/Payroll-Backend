@@ -8,8 +8,9 @@ import {
   queries,
 } from "./helpers.js";
 
-// Carga los mapas de permisos con permiso para login (perfil 1) y logout
-// (perfil 2), y un perfil público con id 5 autorizado a login.
+// Carga los mapas de permisos con permiso para login (perfil 1), logout
+// (perfiles 2 y 9, este último NO es Superusuario) y un perfil público con id
+// 5 autorizado a login.
 async function crearSecurity({ publicoId = null } = {}) {
   const dbFalso = crearDbFalso({ publicoId });
   const seguridad = new Security(dbFalso);
@@ -17,6 +18,7 @@ async function crearSecurity({ publicoId = null } = {}) {
 
   seguridad.setPermissionMethod("Seguridad", "Sesion", "login", 1);
   seguridad.setPermissionMethod("Seguridad", "Sesion", "logout", 2);
+  seguridad.setPermissionMethod("Seguridad", "Sesion", "logout", 9);
   seguridad.setPermissionMethod("Seguridad", "Sesion", "constructor", 3);
   seguridad.setPermissionMethod("Seguridad", "Sesion", "toString", 3);
   if (publicoId != null) {
@@ -54,7 +56,8 @@ test("método protegido sin sesión: 401", async () => {
 
 test("método protegido con sesión sin permiso: 403", async () => {
   const { seguridad } = await crearSecurity();
-  const req = crearReq({ userID: 10, profiles: [9] });
+  // Perfil 8 no tiene permiso a logout (el 2 y el 9 sí).
+  const req = crearReq({ userID: 10, profiles: [8] });
 
   const { status } = await seguridad.executeMethod(
     peticion({ subsystem: "Seguridad", class: "Sesion", method: "logout", params: [] }),
@@ -120,6 +123,36 @@ test("logout a través del endpoint limpia la cookie", async () => {
   assert.equal(status, 200);
   assert.deepEqual(body, { ok: true });
   assert.equal(res.cookieLimpiada, "connect.sid");
+});
+
+test("logout con perfil distinto de Superusuario: 200", async () => {
+  const { seguridad } = await crearSecurity();
+  // Perfil 9 no es Superusuario, pero tiene permiso a logout (sembrado).
+  const req = crearReq({ userID: 10, userName: "Juan", profiles: [9] });
+
+  const { status, body } = await seguridad.executeMethod(
+    peticion({ subsystem: "Seguridad", class: "Sesion", method: "logout", params: [] }),
+    req,
+  );
+
+  assert.equal(status, 200);
+  assert.deepEqual(body, { ok: true });
+});
+
+test("logout sin sesión responde 200 { ok: true }", async () => {
+  const { seguridad } = await crearSecurity({ publicoId: 5 });
+  const req = crearReq({});
+  // logout es público (perfil Publico), así que sin sesión también entra y el
+  // BO lo trata como idempotente.
+  seguridad.setPermissionMethod("Seguridad", "Sesion", "logout", 5);
+
+  const { status, body } = await seguridad.executeMethod(
+    peticion({ subsystem: "Seguridad", class: "Sesion", method: "logout", params: [] }),
+    req,
+  );
+
+  assert.equal(status, 200);
+  assert.deepEqual(body, { ok: true });
 });
 
 test("getPermissionMethod/getPermissionOption consultan los mapas", async () => {

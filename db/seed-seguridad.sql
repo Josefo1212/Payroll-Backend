@@ -32,7 +32,9 @@ WHERE c.nombre = 'Sesion'
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
 -- Perfil público: lo usan los visitantes sin sesión (login, sessionExist y
--- getSession están en la lista blanca del esquema del profe).
+-- getSession están en la lista blanca del esquema del profe). logout también
+-- va acá: cerrar la propia sesión debe poder hacerlo cualquier perfil, no
+-- solo Superusuario.
 INSERT INTO perfil (nombre_perfil, descripcion)
 VALUES ('Publico', 'Permisos de cualquier visitante, con o sin sesión')
 ON CONFLICT (nombre_perfil) DO NOTHING;
@@ -43,7 +45,7 @@ FROM perfil pf
 JOIN clase c ON c.nombre = 'Sesion'
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Publico'
-  AND m.nombre IN ('login', 'sessionExist', 'getSession')
+  AND m.nombre IN ('login', 'logout', 'sessionExist', 'getSession')
 ON CONFLICT DO NOTHING;
 
 -- Superusuario: permiso a TODOS los métodos (logout incluido).
