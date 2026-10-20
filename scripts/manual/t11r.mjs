@@ -2,7 +2,8 @@
 // El orden es forma -> permiso -> reflexion -> ejecucion. Para llegar a la
 // reflexion (501) hay que conceder el permiso en memoria; si no, el 403
 // tapa el caso. No toca la base: setPermissionMethod solo cambia el mapa.
-import { security } from "../src/security/Security.js";
+import "./_guard.mjs";
+import { security } from "../../src/security/Security.js";
 import { reqDe } from "./_req.mjs";
 
 await security.loadPermission();

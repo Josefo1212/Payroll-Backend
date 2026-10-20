@@ -1,12 +1,13 @@
 // T13: login correcto, clave mala suma intento, bloqueo y reinicio.
 // El login ahora pasa por el BO Sesion vía executeMethod (firma req).
-import { security } from "../src/security/Security.js";
-import { db } from "../src/database/Database.js";
+import "./_guard.mjs";
+import { security } from "../../src/security/Security.js";
+import { db } from "../../src/database/Database.js";
 import { crearReq } from "./_req.mjs";
 
 const CED = "T13-001";
 const USER = "t13_001";
-const PASS = "123456";
+const PASS = "clave123";
 
 await security.loadPermission();
 await db.query("DELETE FROM usuario WHERE username = $1", [USER]);

@@ -1,7 +1,8 @@
 // T12: registrar crea Persona + Usuario (clave hasheada, debe cambiar clave),
 // rechaza obligatorios faltantes y no deja filas con datos duplicados.
-import { security } from "../src/security/Security.js";
-import { db } from "../src/database/Database.js";
+import "./_guard.mjs";
+import { security } from "../../src/security/Security.js";
+import { db } from "../../src/database/Database.js";
 import { reqDe } from "./_req.mjs";
 
 const CED = "T12-001";
@@ -24,7 +25,7 @@ const datos = {
   direccion: null,
   rif: null,
   username: USER,
-  password: "123456",
+  password: "clave123",
 };
 
 const casos = [];

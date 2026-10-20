@@ -1,4 +1,5 @@
-import { security } from "../src/security/Security.js";
+import "./_guard.mjs";
+import { security } from "../../src/security/Security.js";
 import { reqDe } from "./_req.mjs";
 
 await security.loadPermission();

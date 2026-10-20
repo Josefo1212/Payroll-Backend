@@ -1,9 +1,10 @@
 // T003: POST /api/execute de punta a punta por HTTP.
 // Arranca la app en un puerto efímero, hace login real (cookie incluida) y
 // comprueba 401, 200, 409, 400, 403 y 501. Limpia los datos al final.
-import app from "../src/app.js";
-import { security } from "../src/security/Security.js";
-import { db } from "../src/database/Database.js";
+import "./_guard.mjs";
+import app from "../../src/app.js";
+import { security } from "../../src/security/Security.js";
+import { db } from "../../src/database/Database.js";
 
 const CED = "T003-001";
 const USER = "t003_001";
@@ -48,7 +49,7 @@ const datos = {
   primer_apellido: "T003",
   email: "t003_001@example.com",
   username: USER,
-  password: "123456",
+  password: "clave123",
 };
 const contarUsuario = async () =>
   (

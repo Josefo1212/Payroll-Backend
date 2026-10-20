@@ -6,6 +6,6 @@
 // - crearReq: doble de petición con sesión estilo express-session
 //   (regenerate/save/destroy), reutilizado del arnés de pruebas, para los
 //   flujos que sí hacen login/logout de verdad.
-export { crearReq } from "../test/helpers.js";
+export { crearReq } from "../../test/helpers.js";
 
 export const reqDe = (session) => ({ session });
