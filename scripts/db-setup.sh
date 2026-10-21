@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
 # Orden de despliegue de la base de datos del sistema de nómina.
 #
-# Aplica las migraciones y los seeds en el orden que exige el esquema. Es
-# repetible: los seeds son idempotentes (ON CONFLICT) y las migraciones se
-# saltan si detecta que ya están aplicadas, así que se puede correr varias
-# veces sobre la misma base sin fallar.
+# El esquema base vive en db/init.sql (sin número, se corre UNA vez sobre una
+# base vacía). Los cambios posteriores sobre una base con datos van en
+# db/migrations/NNN_nombre.sql (número primero).
 #
 # Uso:
 #   DATABASE_URL=postgresql://usuario:clave@host:5432/base ./scripts/db-setup.sh
 #   DATABASE_URL=... ./scripts/db-setup.sh --with-test-user
 #
-# Sin --with-test-user aplica solo migraciones y db/seed-seguridad.sql. Con la
-# bandera agrega db/seed-login.sql y db/seed-superusuario.sql (usuario de
-# prueba admin_prueba/Password123), que NUNCA deben ir a producción.
+# Sin --with-test-user aplica db/init.sql y db/seed-seguridad.sql. Con la
+# bandera agrega db/seed-usuario-prueba.sql (usuario admin_prueba/Password123
+# ligado a los cuatro perfiles), que NUNCA debe ir a producción.
 #
 # No lleva credenciales: la conexión sale siempre de DATABASE_URL.
 
@@ -32,7 +31,7 @@ for arg in "$@"; do
   esac
 done
 
-# Nunca tocar producción: los seeds y migraciones se corren a mano en dev/CI.
+# Nunca tocar producción: los seeds y init se corren a mano en dev/CI.
 if [[ "${NODE_ENV:-}" == "production" ]]; then
   echo "ABORTADO: NODE_ENV=production. Este script no corre en producción." >&2
   exit 1
@@ -59,19 +58,6 @@ tabla_existe() {
   [[ "$(consulta "SELECT to_regclass('public.$1') IS NOT NULL")" == "t" ]]
 }
 
-# ¿Ya está la migración 003? (Bloqueado_hasta como timestamptz).
-zona_horaria_lista() {
-  [[ "$(consulta "SELECT (data_type = 'timestamp with time zone') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuario' AND column_name = 'bloqueado_hasta'")" == "t" ]]
-}
-
-# ¿Ya está la migración 004? (subsistema renombrado a 'Security').
-seguridad_en_ingles() {
-  [[ "$(consulta "SELECT EXISTS (SELECT 1 FROM subsistema WHERE nombre = 'Security')")" == "t" ]]
-}
-
-saltados=()
-aplicados=()
-
 aplicar() {
   local archivo="$1"
   local ruta="$RAIZ/$archivo"
@@ -81,54 +67,41 @@ aplicar() {
   fi
   echo "→ $archivo"
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$ruta"
-  aplicados+=("$archivo")
 }
 
-# --- Migraciones -----------------------------------------------------------
-# El esquema base (001) crea `perfil`; el de seguridad (002) crea `subsistema`.
-# Se detecta cada una por separado: si 001 se aplicó pero 002 falló, no se
-# vuelve a correr 001 (fallaría por tablas existentes).
-if tabla_existe perfil; then
-  echo "001 ya está aplicada: se salta."
-  saltados+=("db/migrations/001_init.sql")
+# --- Esquema ----------------------------------------------------------------
+# init.sql crea todas las tablas; sobre una base con esquema ya creado fallaría
+# (CREATE TABLE existing). Se detecta por `usuario` (existe en todo el modelo) y
+# se salta para que el script sea repetible.
+if tabla_existe usuario; then
+  echo "El esquema ya está aplicado (db/init.sql): se salta."
 else
-  aplicar "db/migrations/001_init.sql"
+  aplicar "db/init.sql"
 fi
 
-if tabla_existe subsistema; then
-  echo "002 ya está aplicada: se salta."
-  saltados+=("db/migrations/002_esquema_seguridad.sql")
+# --- Migraciones (cambios posteriores sobre una base con datos) -------------
+# Formato NNN_nombre.sql, número primero. Hoy la carpeta está vacía: el esquema
+# base vive completo en db/init.sql. Se aplican en orden de nombre (el prefijo
+# numérico lo garantiza). Idempotentes por diseño (IF NOT EXISTS en cada una).
+if compgen -G "$RAIZ/db/migrations/[0-9]*.sql" >/dev/null; then
+  while IFS= read -r ruta; do
+    aplicar "db/migrations/$(basename "$ruta")"
+  done < <(ls "$RAIZ"/db/migrations/[0-9]*.sql | sort)
 else
-  aplicar "db/migrations/002_esquema_seguridad.sql"
+  echo "Sin migraciones pendientes (db/migrations/ sin NNN_*.sql)."
 fi
 
-if zona_horaria_lista; then
-  echo "Bloqueado_hasta ya es timestamptz: se salta 003."
-  saltados+=("db/migrations/003_zona_horaria_seguridad.sql")
-else
-  aplicar "db/migrations/003_zona_horaria_seguridad.sql"
-fi
-
-if seguridad_en_ingles; then
-  echo "004 ya está aplicada: se salta."
-  saltados+=("db/migrations/004_renombrar_seguridad_ingles.sql")
-else
-  aplicar "db/migrations/004_renombrar_seguridad_ingles.sql"
-fi
-
-# --- Seeds -----------------------------------------------------------------
-# db/seed-seguridad.sql es idempotente y crea el perfil 'Superusuario', así que
-# se aplica siempre. Los datos de prueba solo con --with-test-user.
+# --- Seeds ------------------------------------------------------------------
+# db/seed-seguridad.sql es idempotente y crea subsistemas, clases, métodos,
+# perfiles y sus permisos, así que se aplica siempre. El usuario de prueba solo
+# con --with-test-user.
 aplicar "db/seed-seguridad.sql"
 
 if [[ "$CON_TEST_USER" == true ]]; then
   echo "Con --with-test-user: se agrega el usuario de prueba (solo desarrollo)."
-  aplicar "db/seed-login.sql"
-  aplicar "db/seed-superusuario.sql"
+  aplicar "db/seed-usuario-prueba.sql"
 else
-  echo "Sin --with-test-user: se omiten db/seed-login.sql y db/seed-superusuario.sql."
-  saltados+=("db/seed-login.sql" "db/seed-superusuario.sql")
+  echo "Sin --with-test-user: se omite db/seed-usuario-prueba.sql."
 fi
 
-echo "Listo. Base de datos al día (${#aplicados[@]} aplicado(s), ${#saltados[@]} saltado(s))."
-
+echo "Listo. Base de datos al día."

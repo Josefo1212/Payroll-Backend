@@ -1,17 +1,13 @@
 // ==========================================
-// SISTEMA DE NÓMINA — MODELO DE DATOS v6 (26 tablas)
-// Espejo del esquema real aplicado en Neon (db/migrations/001..005).
-// Mantener en el MISMO cambio que cualquier migración.
+// SISTEMA DE NÓMINA — MODELO DE DATOS v8 (27 tablas)
+// Regla: tablas transaccionales -> UUID; tablas maestras -> serial (int)
+// v8: se agrega refresh_token (sesiones JWT con rotación)
 //
-// Seguridad según el esquema del profesor:
-//   Persona > Usuario > Usuario_Perfil < Perfil
+// Seguridad:
+//   persona > usuario > usuario_perfil < Perfil
+//   Usuario > refresh_token
 //   Subsistema > Opcion / Clase > Metodo
-//   Permiso_Opcion y Permiso_Metodo (Perfil con Opcion / Metodo)
-//
-// Nota sobre nombres: el subsistema y las clases del módulo de seguridad se
-// guardan EN INGLÉS (Security / Session / User, ver migración 004) para que la
-// llave de reflexión del backend (src/bo/<Subsistema>/<Clase>.js) coincida con
-// la fila de la base. En este modelo los placeholders de ejemplo van genéricos.
+//   permiso_opcion y permiso_metodo (Perfil con Opcion / Metodo)
 // ==========================================
 
 // ------------------------------------------
@@ -130,93 +126,117 @@ Enum estado_afiliacion {
 }
 
 // ------------------------------------------
-// SEGURIDAD: IDENTIDAD (Persona > Usuario > Perfil)
+// SEGURIDAD: IDENTIDAD (persona > usuario > Perfil)
 // ------------------------------------------
 
-Table Usuario {
-  Id int [pk, increment]
-  Persona_id int [not null, unique, ref: > Persona.Id, note: 'Una persona tiene como máximo un usuario']
-  Username varchar(60) [not null, unique]
-  Password_hash varchar(255) [not null, note: 'bcrypt; nunca texto plano']
-  Activo boolean [not null, default: true]
-  Debe_cambiar_clave boolean [not null, default: true, note: 'Migración 002: ADD DEFAULT false, luego SET DEFAULT true']
-  Intentos_fallidos smallint [not null, default: 0]
-  Bloqueado_hasta timestamptz [note: 'Migración 003: TIMESTAMPTZ (era timestamp sin zona)']
-  Ultimo_acceso timestamptz [note: 'Migración 003: TIMESTAMPTZ']
-  Created_at timestamp [not null, default: `now()`]
-  Updated_at timestamp
+// UUID: se crean usuarios con frecuencia y el id viaja en el token
+Table usuario {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, unique, ref: > persona.id, note: 'Una persona tiene como máximo un usuario']
+  username varchar(60) [not null, unique]
+  password_hash varchar(255) [not null, note: 'bcrypt; nunca texto plano']
+  activo boolean [not null, default: true]
+  debe_cambiar_clave boolean [not null, default: true]
+  intentos_fallidos smallint [not null, default: 0]
+  bloqueado_hasta timestamptz
+  ultimo_acceso timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
 }
 
-// El perfil es quien recibe los permisos
-Table Perfil {
-  Id int [pk, increment]
-  Nombre_perfil varchar(50) [not null, unique, note: 'Superusuario, Usuario, Publico, RRHH, Contador...']
-  Descripcion varchar(200)
-  Activo boolean [not null, default: true]
+// MAESTRA -> serial. El perfil es quien recibe los permisos
+Table perfil {
+  id int [pk, increment]
+  nombre_perfil varchar(50) [not null, unique, note: 'Superusuario, Usuario, Publico, RRHH, Contador...']
+  descripcion varchar(200)
+  activo boolean [not null, default: true]
 }
 
 // Un usuario puede tener varios perfiles; un perfil lo tienen muchos usuarios
-Table Usuario_Perfil {
-  Usuario_id int [not null, ref: > Usuario.Id]
-  Perfil_id int [not null, ref: > Perfil.Id]
+Table usuario_perfil {
+  usuario_id uuid [not null, ref: > usuario.id]
+  perfil_id int [not null, ref: > perfil.id]
 
   indexes {
-    (Usuario_id, Perfil_id) [pk]
-    Perfil_id
+    (usuario_id, perfil_id) [pk]
+    perfil_id
   }
 }
 
 // ------------------------------------------
-// SEGURIDAD: ESTRUCTURA DEL SISTEMA
+// SEGURIDAD: SESIONES JWT (TRANSACCIONAL -> UUID)
 // ------------------------------------------
 
-// Agrupa opciones y clases. En la BD real: Session (sesión) y Security
-// (menú, admin y usuarios). Los nombres van en inglés (migración 004).
-Table Subsistema {
-  Id int [pk, increment]
-  Nombre varchar(60) [not null, unique, note: 'Alfanumérico, sin espacios ni _ (CHECK)']
-  Descripcion varchar(200)
-  Activo boolean [not null, default: true]
+Table refresh_token {
+  id uuid [pk, default: `gen_random_uuid()`]
+  usuario_id uuid [not null, ref: > usuario.id]
+  familia_id uuid [not null, note: 'Agrupa la cadena de rotaciones de un mismo login. Se genera en el login y se hereda al rotar']
+  token_hash varchar(64) [not null, unique, note: 'SHA-256 (hex) del token. Nunca el token en texto plano']
+  expira_en timestamptz [not null]
+  revocado_en timestamptz [note: 'Null = activo. Se llena al hacer logout o al rotar']
+  reemplazado_por uuid [ref: - refresh_token.id, note: 'Token nuevo que lo sustituyó al rotar']
+  ip varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    usuario_id
+    familia_id
+    expira_en
+  }
+
+  Note: 'El refresh token se envía al cliente en cookie httpOnly. Aquí solo se guarda su hash.'
+}
+
+// ------------------------------------------
+// SEGURIDAD: ESTRUCTURA DEL SISTEMA (todas maestras -> serial)
+// ------------------------------------------
+
+// Agrupa opciones y clases. En la BD real: Security (en inglés)
+Table subsistema {
+  id int [pk, increment]
+  nombre varchar(60) [not null, unique, note: 'Alfanumérico, sin espacios ni _ (CHECK)']
+  descripcion varchar(200)
+  activo boolean [not null, default: true]
 }
 
 // Lo que el usuario VE: ítems de menú / pantallas
-Table Opcion {
-  Id int [pk, increment]
-  Subsistema_id int [not null, ref: > Subsistema.Id]
-  Nombre varchar(80) [not null, note: 'Ej. registrar, Usuarios, Perfiles']
-  Descripcion varchar(200)
-  Orden smallint [not null, default: 0, note: 'Orden de aparición en el menú']
-  Activo boolean [not null, default: true]
+Table opcion {
+  id int [pk, increment]
+  subsistema_id int [not null, ref: > subsistema.id]
+  nombre varchar(80) [not null, note: 'Ej. registrar, Usuarios, Perfiles']
+  descripcion varchar(200)
+  orden smallint [not null, default: 0, note: 'Orden de aparición en el menú']
+  activo boolean [not null, default: true]
 
   indexes {
-    (Subsistema_id, Nombre) [unique]
+    (subsistema_id, nombre) [unique]
   }
 }
 
-// Objetos de negocio (Business Objects) del subsistema. En la BD real:
-// Session (subsistema Session); Menu, Admin y User (subsistema Security).
-Table Clase {
-  Id int [pk, increment]
-  Subsistema_id int [not null, ref: > Subsistema.Id]
-  Nombre varchar(80) [not null, note: 'Idéntico a la clase del backend; alfanumérico, sin _ (CHECK)']
-  Descripcion varchar(200)
-  Activo boolean [not null, default: true]
+// Objetos de negocio (Business Objects) del subsistema. En la BD real: Session, User, Menu, Admin
+Table clase {
+  id int [pk, increment]
+  subsistema_id int [not null, ref: > subsistema.id]
+  nombre varchar(80) [not null, note: 'Idéntico a la clase del backend; alfanumérico, sin _ (CHECK)']
+  descripcion varchar(200)
+  activo boolean [not null, default: true]
 
   indexes {
-    (Subsistema_id, Nombre) [unique]
+    (subsistema_id, nombre) [unique]
   }
 }
 
 // Lo que el backend EJECUTA: métodos de negocio de cada clase
-Table Metodo {
-  Id int [pk, increment]
-  Clase_id int [not null, ref: > Clase.Id]
-  Nombre varchar(80) [not null, note: 'Idéntico al método del backend; alfanumérico, sin _ (CHECK)']
-  Descripcion varchar(200)
-  Activo boolean [not null, default: true]
+Table metodo {
+  id int [pk, increment]
+  clase_id int [not null, ref: > clase.id]
+  nombre varchar(80) [not null, note: 'Idéntico al método del backend; alfanumérico, sin _ (CHECK)']
+  descripcion varchar(200)
+  activo boolean [not null, default: true]
 
   indexes {
-    (Clase_id, Nombre) [unique]
+    (clase_id, nombre) [unique]
   }
 }
 
@@ -225,123 +245,122 @@ Table Metodo {
 // ------------------------------------------
 
 // Qué opciones (menú/pantallas) ve cada perfil
-Table Permiso_Opcion {
-  Perfil_id int [not null, ref: > Perfil.Id]
-  Opcion_id int [not null, ref: > Opcion.Id]
+Table permiso_opcion {
+  perfil_id int [not null, ref: > perfil.id]
+  opcion_id int [not null, ref: > opcion.id]
 
   indexes {
-    (Perfil_id, Opcion_id) [pk]
-    Opcion_id
+    (perfil_id, opcion_id) [pk]
+    opcion_id
   }
 }
 
 // Qué métodos puede ejecutar cada perfil
-Table Permiso_Metodo {
-  Perfil_id int [not null, ref: > Perfil.Id]
-  Metodo_id int [not null, ref: > Metodo.Id]
+Table permiso_metodo {
+  perfil_id int [not null, ref: > perfil.id]
+  metodo_id int [not null, ref: > metodo.id]
 
   indexes {
-    (Perfil_id, Metodo_id) [pk]
-    Metodo_id
+    (perfil_id, metodo_id) [pk]
+    metodo_id
   }
 
   Note: 'Llave del mapa en memoria: Subsistema_Clase_metodo_perfilId (con nombres)'
 }
 
 // ------------------------------------------
-// CATÁLOGOS
+// CATÁLOGOS (maestras -> serial)
 // ------------------------------------------
 
-Table Banco {
-  Id int [pk, increment]
-  Codigo varchar(10) [not null, unique, note: 'Código del banco (ej. 0102)']
-  Nombre varchar(100) [not null, unique]
-  Activo boolean [not null, default: true]
+Table banco {
+  id int [pk, increment]
+  codigo varchar(10) [not null, unique, note: 'Código del banco (ej. 0102)']
+  nombre varchar(100) [not null, unique]
+  activo boolean [not null, default: true]
 }
 
-Table Cargo {
-  Id int [pk, increment]
-  Nombre varchar(100) [not null, unique]
-  Descripcion varchar(200)
-  Activo boolean [not null, default: true]
+Table cargo {
+  id int [pk, increment]
+  nombre varchar(100) [not null, unique]
+  descripcion varchar(200)
+  activo boolean [not null, default: true]
 }
 
 // ------------------------------------------
-// PERSONA (datos personales del trabajador)
+// PERSONA (datos personales del trabajador) -> UUID
 // ------------------------------------------
 
-Table Persona {
-  Id int [pk, increment]
-  Cedula varchar(20) [not null, unique]
-  Rif varchar(20) [unique, note: 'Migración 002: se agregó Rif (faltaba en 001)']
-  Primer_nombre varchar(60) [not null]
-  Segundo_nombre varchar(60)
-  Primer_apellido varchar(60) [not null]
-  Segundo_apellido varchar(60)
-  Fecha_nacimiento date
-  Sexo sexo
-  Estado_civil estado_civil
-  Nro_tlf varchar(20)
-  Email varchar(120) [unique]
-  Direccion varchar(250)
-  Estado estado_persona [not null, default: 'ACTIVO']
-  Created_at timestamp [not null, default: `now()`]
-  Updated_at timestamp
+Table persona {
+  id uuid [pk, default: `gen_random_uuid()`]
+  cedula varchar(20) [not null, unique]
+  primer_nombre varchar(60) [not null]
+  segundo_nombre varchar(60)
+  primer_apellido varchar(60) [not null]
+  segundo_apellido varchar(60)
+  fecha_nacimiento date
+  sexo sexo
+  estado_civil estado_civil
+  nro_tlf varchar(20)
+  email varchar(120) [unique]
+  direccion varchar(250)
+  estado estado_persona [not null, default: 'ACTIVO']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz
 
   Note: 'Fecha de ingreso y egreso no se guardan aquí: se derivan de Contrato.'
 }
 
-Table Cuenta_bancaria {
-  Id int [pk, increment]
-  Persona_id int [not null, ref: > Persona.Id]
-  Banco_id int [not null, ref: > Banco.Id]
-  Tipo_cuenta tipo_cuenta [not null]
-  Nro_cuenta varchar(30) [not null]
-  Es_principal boolean [not null, default: false]
-  Activa boolean [not null, default: true]
+Table cuenta_bancaria {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  banco_id int [not null, ref: > banco.id]
+  tipo_cuenta tipo_cuenta [not null]
+  nro_cuenta varchar(30) [not null]
+  es_principal boolean [not null, default: false]
+  activa boolean [not null, default: true]
 
   indexes {
-    (Banco_id, Nro_cuenta) [unique]
-    Persona_id
+    (banco_id, nro_cuenta) [unique]
+    persona_id
   }
 
-  Note: 'Pendiente (regla de BD): solo una cuenta principal activa por persona (índice único parcial).'
+  Note: 'Regla de BD: solo una cuenta principal activa por persona (índice único parcial).'
 }
 
 // ------------------------------------------
-// CONTRATACIÓN
+// CONTRATACIÓN -> UUID
 // ------------------------------------------
 
-Table Contrato {
-  Id int [pk, increment]
-  Persona_id int [not null, ref: > Persona.Id]
-  Cargo_id int [not null, ref: > Cargo.Id]
-  Fecha_inicio date [not null]
-  Fecha_fin date
-  Tipo_pago tipo_pago [not null]
-  Frecuencia_pago frecuencia_pago [not null]
-  Horas_semanales decimal(5,2) [note: 'Jornada base; necesaria para POR_HORA y horas extra']
-  Estado estado_contrato [not null, default: 'VIGENTE']
-  Created_at timestamp [not null, default: `now()`]
+Table contrato {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  cargo_id int [not null, ref: > cargo.id]
+  fecha_inicio date [not null]
+  fecha_fin date
+  tipo_pago tipo_pago [not null]
+  frecuencia_pago frecuencia_pago [not null]
+  horas_semanales decimal(5,2) [note: 'Jornada base; necesaria para POR_HORA y horas extra']
+  estado estado_contrato [not null, default: 'VIGENTE']
+  created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    (Persona_id, Estado)
+    (persona_id, estado)
   }
 
-  Note: 'CHECK chk_contrato_fechas: Fecha_fin IS NULL OR Fecha_fin >= Fecha_inicio. Pendiente (regla de BD): sin dos contratos VIGENTES solapados por persona.'
+  Note: 'CHECK chk_contrato_fechas: Fecha_fin IS NULL OR Fecha_fin >= Fecha_inicio. Regla de BD: sin dos contratos VIGENTES solapados por persona (EXCLUDE).'
 }
 
 // Historial salarial: un aumento = una fila nueva
-Table Contrato_salario {
-  Id int [pk, increment]
-  Contrato_id int [not null, ref: > Contrato.Id]
-  Monto decimal(12,2) [not null, note: 'Por hora si POR_HORA; por período completo si SALARIO_FIJO']
-  Vigente_desde date [not null]
-  Vigente_hasta date
-  Motivo varchar(150)
+Table contrato_salario {
+  id uuid [pk, default: `gen_random_uuid()`]
+  contrato_id uuid [not null, ref: > contrato.id]
+  monto decimal(12,2) [not null, note: 'Por hora si POR_HORA; por período completo si SALARIO_FIJO']
+  vigente_desde date [not null]
+  vigente_hasta date
+  motivo varchar(150)
 
   indexes {
-    (Contrato_id, Vigente_desde) [unique]
+    (contrato_id, vigente_desde) [unique]
   }
 }
 
@@ -349,42 +368,45 @@ Table Contrato_salario {
 // SEGURO SOCIAL Y APORTES DE LEY
 // ------------------------------------------
 
-Table Tipo_aporte_ley {
-  Id int [pk, increment]
-  Codigo varchar(30) [not null, unique, note: 'SSO / PARO_FORZOSO / VIVIENDA']
-  Nombre varchar(100) [not null]
-  Entidad varchar(100) [note: 'IVSS, INCES, BANAVIH...']
-  Concepto_deduccion_id int [ref: > Concepto.Id, note: 'Concepto de la deducción al trabajador']
-  Concepto_patronal_id int [ref: > Concepto.Id, note: 'Concepto del aporte del patrono']
+// MAESTRA -> serial
+Table tipo_aporte_ley {
+  id int [pk, increment]
+  codigo varchar(30) [not null, unique, note: 'SSO / PARO_FORZOSO / VIVIENDA']
+  nombre varchar(100) [not null]
+  entidad varchar(100) [note: 'IVSS, INCES, BANAVIH...']
+  concepto_deduccion_id int [ref: > concepto.id, note: 'Concepto de la deducción al trabajador']
+  concepto_patronal_id int [ref: > concepto.id, note: 'Concepto del aporte del patrono']
 }
 
-Table Parametro_aporte_ley {
-  Id int [pk, increment]
-  Tipo_aporte_id int [not null, ref: > Tipo_aporte_ley.Id]
-  Tasa_empleado decimal(6,4) [not null, note: '0.0400 = 4%']
-  Tasa_patronal decimal(6,4) [not null, note: '0.1000 = 10%']
-  Tope_base decimal(12,2) [note: 'Salario máximo sobre el que se calcula']
-  Piso_base decimal(12,2) [note: 'Base mínima de cálculo']
-  Vigente_desde date [not null]
-  Vigente_hasta date
-  Base_legal varchar(200)
+// MAESTRA (tasas de ley, cambian pocas veces al año) -> serial
+Table parametro_aporte_ley {
+  id int [pk, increment]
+  tipo_aporte_id int [not null, ref: > tipo_aporte_ley.id]
+  tasa_empleado decimal(6,4) [not null, note: '0.0400 = 4%']
+  tasa_patronal decimal(6,4) [not null, note: '0.1000 = 10%']
+  tope_base decimal(12,2) [note: 'Salario máximo sobre el que se calcula']
+  piso_base decimal(12,2) [note: 'Base mínima de cálculo']
+  vigente_desde date [not null]
+  vigente_hasta date
+  base_legal varchar(200)
 
   indexes {
-    (Tipo_aporte_id, Vigente_desde) [unique]
+    (tipo_aporte_id, vigente_desde) [unique]
   }
 }
 
-Table Afiliacion_ley {
-  Id int [pk, increment]
-  Persona_id int [not null, ref: > Persona.Id]
-  Tipo_aporte_id int [not null, ref: > Tipo_aporte_ley.Id]
-  Nro_afiliacion varchar(30) [not null]
-  Fecha_inscripcion date [not null]
-  Fecha_baja date
-  Estado estado_afiliacion [not null, default: 'ACTIVO']
+// TRANSACCIONAL (una por trabajador y tipo de aporte) -> UUID
+Table afiliacion_ley {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  tipo_aporte_id int [not null, ref: > tipo_aporte_ley.id]
+  nro_afiliacion varchar(30) [not null]
+  fecha_inscripcion date [not null]
+  fecha_baja date
+  estado estado_afiliacion [not null, default: 'ACTIVO']
 
   indexes {
-    (Persona_id, Tipo_aporte_id) [unique]
+    (persona_id, tipo_aporte_id) [unique]
   }
 }
 
@@ -392,161 +414,162 @@ Table Afiliacion_ley {
 // CONCEPTOS Y NÓMINA
 // ------------------------------------------
 
-Table Concepto {
-  Id int [pk, increment]
-  Codigo varchar(30) [not null, unique]
-  Nombre_concepto varchar(100) [not null]
-  Tipo_concepto tipo_concepto [not null]
-  Categoria categoria_concepto [not null]
-  Unidad unidad_concepto [not null, default: 'MONTO', note: 'Unidad en que se carga la novedad']
-  Afecta_base_ley boolean [not null, default: false, note: 'Si suma a la base de cálculo de aportes de ley']
-  Codigo_cuenta_contable varchar(30)
-  Activo boolean [not null, default: true]
+// MAESTRA (catálogo de conceptos) -> serial
+Table concepto {
+  id int [pk, increment]
+  codigo varchar(30) [not null, unique]
+  nombre_concepto varchar(100) [not null]
+  tipo_concepto tipo_concepto [not null]
+  categoria categoria_concepto [not null]
+  unidad unidad_concepto [not null, default: 'MONTO', note: 'Unidad en que se carga la novedad']
+  afecta_base_ley boolean [not null, default: false, note: 'Si suma a la base de cálculo de aportes de ley']
+  codigo_cuenta_contable varchar(30)
+  activo boolean [not null, default: true]
 }
 
 // Conceptos recurrentes por persona: bonos fijos, deducciones opcionales
-Table Concepto_persona {
-  Id int [pk, increment]
-  Persona_id int [not null, ref: > Persona.Id]
-  Concepto_id int [not null, ref: > Concepto.Id]
-  Tipo_valor tipo_valor [not null, default: 'MONTO_FIJO']
-  Valor decimal(12,4) [not null, note: 'Monto, o fracción del salario si es PORCENTAJE_SALARIO (0.1000 = 10%)']
-  Vigente_desde date [not null]
-  Vigente_hasta date [note: 'Null = sin fecha de fin']
-  Observacion varchar(200)
-  Created_at timestamp [not null, default: `now()`]
+Table concepto_persona {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  concepto_id int [not null, ref: > concepto.id]
+  tipo_valor tipo_valor [not null, default: 'MONTO_FIJO']
+  valor decimal(12,4) [not null, note: 'Monto, o fracción del salario si es PORCENTAJE_SALARIO (0.1000 = 10%)']
+  vigente_desde date [not null]
+  vigente_hasta date [note: 'Null = sin fecha de fin']
+  observacion varchar(200)
+  created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    (Persona_id, Concepto_id, Vigente_desde) [unique]
+    (persona_id, concepto_id, vigente_desde) [unique]
   }
 
   Note: 'CHECK: Valor >= 0.'
 }
 
-Table Periodo_Nomina {
-  Id int [pk, increment]
-  Fecha_inicio date [not null]
-  Fecha_fin date [not null]
-  Frecuencia frecuencia_pago [not null]
-  Estado estado_periodo [not null, default: 'BORRADOR']
-  Descripcion varchar(200)
-  Procesado_por int [ref: > Usuario.Id]
-  Fecha_proceso timestamp
-  Created_at timestamp [not null, default: `now()`]
+Table periodo_nomina {
+  id uuid [pk, default: `gen_random_uuid()`]
+  fecha_inicio date [not null]
+  fecha_fin date [not null]
+  frecuencia frecuencia_pago [not null]
+  estado estado_periodo [not null, default: 'BORRADOR']
+  descripcion varchar(200)
+  procesado_por uuid [ref: > usuario.id]
+  fecha_proceso timestamptz
+  created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    (Frecuencia, Fecha_inicio, Fecha_fin) [unique]
+    (frecuencia, fecha_inicio, fecha_fin) [unique]
   }
 
   Note: 'CHECK chk_periodo_fechas: Fecha_fin >= Fecha_inicio. Solo entran personas con contrato de la misma frecuencia.'
 }
 
 // Insumos variables del cálculo: horas extra, faltas, bonos puntuales
-Table Novedad {
-  Id int [pk, increment]
-  Persona_id int [not null, ref: > Persona.Id]
-  Concepto_id int [not null, ref: > Concepto.Id]
-  Periodo_Nomina_id int [not null, ref: > Periodo_Nomina.Id]
-  Fecha date [not null]
-  Cantidad decimal(8,2) [note: 'Horas o días, según la unidad del concepto']
-  Monto decimal(12,2) [note: 'Solo si la unidad del concepto es MONTO']
-  Estado estado_novedad [not null, default: 'PENDIENTE']
-  Observacion varchar(200)
-  Registrado_por int [not null, ref: > Usuario.Id]
-  Aprobado_por int [ref: > Usuario.Id]
-  Created_at timestamp [not null, default: `now()`]
+Table novedad {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  concepto_id int [not null, ref: > concepto.id]
+  periodo_nomina_id uuid [not null, ref: > periodo_nomina.id]
+  fecha date [not null]
+  cantidad decimal(8,2) [note: 'Horas o días, según la unidad del concepto']
+  monto decimal(12,2) [note: 'Solo si la unidad del concepto es MONTO']
+  estado estado_novedad [not null, default: 'PENDIENTE']
+  observacion varchar(200)
+  registrado_por uuid [not null, ref: > usuario.id]
+  aprobado_por uuid [ref: > usuario.id]
+  created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    (Persona_id, Periodo_Nomina_id)
-    Estado
+    (persona_id, periodo_nomina_id)
+    estado
   }
 }
 
-Table Recibo_pago {
-  Id int [pk, increment]
-  Persona_id int [not null, ref: > Persona.Id]
-  Periodo_Nomina_id int [not null, ref: > Periodo_Nomina.Id]
-  Contrato_id int [not null, ref: > Contrato.Id]
-  Fecha_emision date [not null]
-  Total_asignaciones decimal(12,2) [not null]
-  Total_deducciones decimal(12,2) [not null]
-  Monto_total decimal(12,2) [not null, note: 'Neto a pagar = asignaciones - deducciones (excluye aportes patronales)']
-  Estado estado_recibo [not null, default: 'PENDIENTE']
+Table recibo_pago {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  periodo_nomina_id uuid [not null, ref: > periodo_nomina.id]
+  contrato_id uuid [not null, ref: > contrato.id]
+  fecha_emision date [not null]
+  total_asignaciones decimal(12,2) [not null]
+  total_deducciones decimal(12,2) [not null]
+  monto_total decimal(12,2) [not null, note: 'Neto a pagar = asignaciones - deducciones (excluye aportes patronales)']
+  estado estado_recibo [not null, default: 'PENDIENTE']
 
   // Datos del pago (se llenan al pagar)
-  Fecha_pago date
-  Metodo_pago metodo_pago
-  Cuenta_bancaria_id int [ref: > Cuenta_bancaria.Id, note: 'Null si es efectivo']
-  Referencia_pago varchar(60) [note: 'Nro. de transferencia / cheque']
-  Pagado_por int [ref: > Usuario.Id]
+  fecha_pago date
+  metodo_pago metodo_pago
+  cuenta_bancaria_id uuid [ref: > cuenta_bancaria.id, note: 'Null si es efectivo']
+  referencia_pago varchar(60) [note: 'Nro. de transferencia / cheque']
+  pagado_por uuid [ref: > usuario.id]
 
-  Created_at timestamp [not null, default: `now()`]
+  created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    (Persona_id, Periodo_Nomina_id) [unique]
-    Periodo_Nomina_id
+    (persona_id, periodo_nomina_id) [unique]
+    periodo_nomina_id
   }
 
   Note: 'CHECK chk_recibo_pago: si Estado = PAGADO, Fecha_pago y Metodo_pago son obligatorios.'
 }
 
-Table Detalle_recibo {
-  Id int [pk, increment]
-  Recibo_pago_id int [not null, ref: > Recibo_pago.Id]
-  Concepto_id int [not null, ref: > Concepto.Id]
-  Cuota_prestamo_id int [unique, ref: > Cuota_prestamo.Id, note: 'Solo si la línea es el descuento de una cuota']
-  Novedad_id int [ref: > Novedad.Id, note: 'Novedad que originó la línea, si aplica']
-  Concepto_persona_id int [ref: > Concepto_persona.Id, note: 'Bono/deducción recurrente que originó la línea, si aplica']
-  Parametro_aporte_id int [ref: > Parametro_aporte_ley.Id, note: 'Congela la tasa de ley usada (deducción o aporte patronal)']
-  Base_calculo decimal(12,2)
-  Tasa_aplicada decimal(6,4)
-  Cantidad_unidades decimal(8,2) [note: 'Horas, días, etc.']
-  Monto decimal(12,2) [not null]
+Table detalle_recibo {
+  id uuid [pk, default: `gen_random_uuid()`]
+  recibo_pago_id uuid [not null, ref: > recibo_pago.id]
+  concepto_id int [not null, ref: > concepto.id]
+  cuota_prestamo_id uuid [unique, ref: > cuota_prestamo.id, note: 'Solo si la línea es el descuento de una cuota']
+  novedad_id uuid [ref: > novedad.id, note: 'Novedad que originó la línea, si aplica']
+  concepto_persona_id uuid [ref: > concepto_persona.id, note: 'Bono/deducción recurrente que originó la línea, si aplica']
+  parametro_aporte_id int [ref: > parametro_aporte_ley.id, note: 'Congela la tasa de ley usada (deducción o aporte patronal)']
+  base_calculo decimal(12,2)
+  tasa_aplicada decimal(6,4)
+  cantidad_unidades decimal(8,2) [note: 'Horas, días, etc.']
+  monto decimal(12,2) [not null]
 
   indexes {
-    Recibo_pago_id
-    Concepto_id
+    recibo_pago_id
+    concepto_id
   }
 
   Note: 'CHECK chk_origen_unico: como máximo UNA de las 4 columnas de origen (Cuota, Novedad, Concepto_persona, Parametro) tiene valor. Las líneas APORTE_PATRONAL no suman a deducciones ni al neto.'
 }
 
 // ------------------------------------------
-// PRÉSTAMOS
+// PRÉSTAMOS -> UUID
 // ------------------------------------------
 
-Table Prestamo {
-  Id int [pk, increment]
-  Persona_id int [not null, ref: > Persona.Id]
-  Fecha_otorgamiento date [not null]
-  Monto_total decimal(12,2) [not null]
-  Nro_cuotas smallint [not null]
-  Cuota_periodica decimal(12,2) [not null]
-  Tasa_interes decimal(6,4) [not null, default: 0]
-  Estado estado_prestamo [not null, default: 'SOLICITADO']
-  Aprobado_por int [ref: > Usuario.Id]
-  Created_at timestamp [not null, default: `now()`]
+Table prestamo {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  fecha_otorgamiento date [not null]
+  monto_total decimal(12,2) [not null]
+  nro_cuotas smallint [not null]
+  cuota_periodica decimal(12,2) [not null]
+  tasa_interes decimal(6,4) [not null, default: 0]
+  estado estado_prestamo [not null, default: 'SOLICITADO']
+  aprobado_por uuid [ref: > usuario.id]
+  created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    (Persona_id, Estado)
+    (persona_id, estado)
   }
 
-  Note: 'Saldo pendiente = SUM(Cuota_prestamo.Monto_cuota) con Estado = PENDIENTE (vista, no campo).'
+  Note: 'Saldo pendiente = SUM(cuota_prestamo.monto_cuota) con Estado = PENDIENTE (vista, no campo).'
 }
 
-Table Cuota_prestamo {
-  Id int [pk, increment]
-  Prestamo_id int [not null, ref: > Prestamo.Id]
-  Nro_cuota smallint [not null]
-  Fecha_vencimiento date [not null]
-  Monto_capital decimal(12,2) [not null]
-  Monto_interes decimal(12,2) [not null, default: 0]
-  Monto_cuota decimal(12,2) [not null]
-  Estado estado_cuota [not null, default: 'PENDIENTE']
+Table cuota_prestamo {
+  id uuid [pk, default: `gen_random_uuid()`]
+  prestamo_id uuid [not null, ref: > prestamo.id]
+  nro_cuota smallint [not null]
+  fecha_vencimiento date [not null]
+  monto_capital decimal(12,2) [not null]
+  monto_interes decimal(12,2) [not null, default: 0]
+  monto_cuota decimal(12,2) [not null]
+  estado estado_cuota [not null, default: 'PENDIENTE']
 
   indexes {
-    (Prestamo_id, Nro_cuota) [unique]
-    (Estado, Fecha_vencimiento)
+    (prestamo_id, nro_cuota) [unique]
+    (estado, fecha_vencimiento)
   }
 }
 
@@ -554,49 +577,50 @@ Table Cuota_prestamo {
 // GRUPOS (para ordenar el diagrama)
 // ------------------------------------------
 
-TableGroup Seguridad_Identidad {
-  Usuario
-  Perfil
-  Usuario_Perfil
+TableGroup seguridad_identidad {
+  usuario
+  perfil
+  usuario_perfil
+  refresh_token
 }
 
-TableGroup Seguridad_Estructura {
-  Subsistema
-  Opcion
-  Clase
-  Metodo
+TableGroup seguridad_estructura {
+  subsistema
+  opcion
+  clase
+  metodo
 }
 
-TableGroup Seguridad_Permisos {
-  Permiso_Opcion
-  Permiso_Metodo
+TableGroup seguridad_permisos {
+  permiso_opcion
+  permiso_metodo
 }
 
-TableGroup Personal {
-  Persona
-  Cuenta_bancaria
-  Banco
-  Cargo
-  Contrato
-  Contrato_salario
+TableGroup personal {
+  persona
+  cuenta_bancaria
+  banco
+  cargo
+  contrato
+  contrato_salario
 }
 
-TableGroup Ley_y_Seguro_Social {
-  Tipo_aporte_ley
-  Parametro_aporte_ley
-  Afiliacion_ley
+TableGroup ley_y_seguro_social {
+  tipo_aporte_ley
+  parametro_aporte_ley
+  afiliacion_ley
 }
 
-TableGroup Nomina {
-  Concepto
-  Concepto_persona
-  Novedad
-  Periodo_Nomina
-  Recibo_pago
-  Detalle_recibo
+TableGroup nomina {
+  concepto
+  concepto_persona
+  novedad
+  periodo_nomina
+  recibo_pago
+  detalle_recibo
 }
 
-TableGroup Prestamos {
-  Prestamo
-  Cuota_prestamo
+TableGroup prestamos {
+  prestamo
+  cuota_prestamo
 }
