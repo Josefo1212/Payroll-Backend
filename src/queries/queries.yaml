@@ -167,3 +167,34 @@ updatePassword: |
          updated_at = NOW()
    WHERE id = $2
   RETURNING id
+
+insertRefreshToken: |
+  INSERT INTO refresh_token (usuario_id, familia_id, token_hash, expira_en, ip, user_agent)
+  VALUES ($1, $2, $3, $4, $5, $6)
+  RETURNING id
+
+findRefreshTokenByHash: |
+  SELECT id, usuario_id, familia_id, expira_en, revocado_en, reemplazado_por
+  FROM refresh_token
+  WHERE token_hash = $1
+
+revokeRefreshToken: |
+  UPDATE refresh_token
+     SET revocado_en = NOW(),
+         reemplazado_por = $2
+   WHERE id = $1
+     AND revocado_en IS NULL
+  RETURNING id
+
+revokeFamily: |
+  UPDATE refresh_token
+     SET revocado_en = NOW()
+   WHERE familia_id = $1
+     AND revocado_en IS NULL
+
+revokeAllUserTokens: |
+  UPDATE refresh_token
+     SET revocado_en = NOW()
+   WHERE usuario_id = $1
+     AND revocado_en IS NULL
+
