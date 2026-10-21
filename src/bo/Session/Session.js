@@ -1,10 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { queries } from "../../queries/loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { passwordService } from "../../services/PasswordService.js";
+import { tokenService } from "../../services/TokenService.js";
 import {
   MAX_INTENTOS_FALLIDOS as MAX_INTENTOS,
   MINUTOS_BLOQUEO,
 } from "../../config/security.js";
+
+const COOKIE_ACCESS = "access_token";
+const COOKIE_REFRESH = "refresh_token";
 
 const RETARDO_MAX = Number(process.env.LOGIN_FAIL_DELAY_MS ?? 400);
 
@@ -68,6 +73,8 @@ export class Session {
 
     const sesion = await this.#createSession(usuario, profiles);
 
+    await this.#emitirTokens(usuario, profiles);
+
     console.log(`Login ok: usuario ${usuario.id}.`);
     return sesion;
   }
@@ -79,9 +86,15 @@ export class Session {
     }
 
     const userID = sesion.userID;
+    await this.#db.query(queries.revokeAllUserTokens, [userID]);
     await new Promise((resolve, reject) => {
       sesion.destroy((error) => (error ? reject(error) : resolve()));
     });
+    this.#req?.res?.clearCookie(COOKIE_ACCESS, tokenService.opcionesCookie());
+    this.#req?.res?.clearCookie(
+      COOKIE_REFRESH,
+      tokenService.opcionesCookie({ refresh: true }),
+    );
     console.log(`Logout: usuario ${userID}.`);
     return { ok: true };
   }
@@ -178,6 +191,34 @@ export class Session {
       profiles,
       debeCambiarClave: this.#req.session.debeCambiarClave,
     };
+  }
+
+  async #emitirTokens(usuario, profiles) {
+    const access = await tokenService.firmarAccess({
+      userID: usuario.id,
+      userName: this.#req.session.userName,
+      perfiles: profiles.map(({ id }) => id),
+    });
+
+    const { valor, hash } = tokenService.generarRefresh();
+    const familiaId = randomUUID();
+
+    await this.#db.query(queries.insertRefreshToken, [
+      usuario.id,
+      familiaId,
+      hash,
+      tokenService.expiracionRefresh(),
+      this.#req?.ip ?? null,
+      this.#req?.get?.("user-agent") ?? null,
+    ]);
+
+    const res = this.#req?.res;
+    if (res) {
+      res.cookie(COOKIE_ACCESS, access, tokenService.opcionesCookie());
+      res.cookie(COOKIE_REFRESH, valor, tokenService.opcionesCookie({ refresh: true }));
+    }
+
+    return { access, refresh: valor, familiaId };
   }
 }
 
