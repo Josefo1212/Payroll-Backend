@@ -23,7 +23,7 @@ test("reloadPermissions recarga y devuelve los conteos", async () => {
     if (texto.includes("permiso_metodo")) {
       return {
         rows: [
-          { subsistema: "Security", clase: "Session", metodo: "login", perfil_id: 1 },
+          { subsistema: "Session", clase: "Session", metodo: "login", perfil_id: 1 },
         ],
       };
     }

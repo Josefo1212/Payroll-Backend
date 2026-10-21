@@ -1,0 +1,602 @@
+// ==========================================
+// SISTEMA DE NÓMINA — MODELO DE DATOS v6 (26 tablas)
+// Espejo del esquema real aplicado en Neon (db/migrations/001..005).
+// Mantener en el MISMO cambio que cualquier migración.
+//
+// Seguridad según el esquema del profesor:
+//   Persona > Usuario > Usuario_Perfil < Perfil
+//   Subsistema > Opcion / Clase > Metodo
+//   Permiso_Opcion y Permiso_Metodo (Perfil con Opcion / Metodo)
+//
+// Nota sobre nombres: el subsistema y las clases del módulo de seguridad se
+// guardan EN INGLÉS (Security / Session / User, ver migración 004) para que la
+// llave de reflexión del backend (src/bo/<Subsistema>/<Clase>.js) coincida con
+// la fila de la base. En este modelo los placeholders de ejemplo van genéricos.
+// ==========================================
+
+// ------------------------------------------
+// ENUMS
+// ------------------------------------------
+
+Enum sexo {
+  M
+  F
+}
+
+Enum estado_civil {
+  SOLTERO
+  CASADO
+  DIVORCIADO
+  VIUDO
+  CONCUBINO
+}
+
+Enum estado_persona {
+  ACTIVO
+  INACTIVO
+}
+
+Enum tipo_pago {
+  POR_HORA
+  SALARIO_FIJO
+}
+
+Enum frecuencia_pago {
+  SEMANAL
+  QUINCENAL
+  MENSUAL
+}
+
+Enum estado_contrato {
+  VIGENTE
+  SUSPENDIDO
+  FINALIZADO
+}
+
+Enum tipo_cuenta {
+  AHORRO
+  CORRIENTE
+}
+
+Enum estado_periodo {
+  BORRADOR
+  PROCESADO
+  PAGADO
+}
+
+Enum estado_recibo {
+  PENDIENTE
+  PAGADO
+  ANULADO
+}
+
+Enum metodo_pago {
+  TRANSFERENCIA
+  PAGO_MOVIL
+  EFECTIVO
+  CHEQUE
+}
+
+Enum tipo_concepto {
+  ASIGNACION
+  DEDUCCION
+  APORTE_PATRONAL
+}
+
+Enum categoria_concepto {
+  LEY
+  OPCIONAL
+  BONO
+  PRESTAMO
+  HORA_EXTRA
+  AJUSTE
+}
+
+Enum unidad_concepto {
+  HORAS
+  DIAS
+  MONTO
+}
+
+Enum tipo_valor {
+  MONTO_FIJO
+  PORCENTAJE_SALARIO
+}
+
+Enum estado_novedad {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  APLICADA
+}
+
+Enum estado_prestamo {
+  SOLICITADO
+  ACTIVO
+  PAGADO
+  ANULADO
+}
+
+Enum estado_cuota {
+  PENDIENTE
+  DESCONTADA
+  CONDONADA
+}
+
+Enum estado_afiliacion {
+  ACTIVO
+  SUSPENDIDO
+  BAJA
+}
+
+// ------------------------------------------
+// SEGURIDAD: IDENTIDAD (Persona > Usuario > Perfil)
+// ------------------------------------------
+
+Table Usuario {
+  Id int [pk, increment]
+  Persona_id int [not null, unique, ref: > Persona.Id, note: 'Una persona tiene como máximo un usuario']
+  Username varchar(60) [not null, unique]
+  Password_hash varchar(255) [not null, note: 'bcrypt; nunca texto plano']
+  Activo boolean [not null, default: true]
+  Debe_cambiar_clave boolean [not null, default: true, note: 'Migración 002: ADD DEFAULT false, luego SET DEFAULT true']
+  Intentos_fallidos smallint [not null, default: 0]
+  Bloqueado_hasta timestamptz [note: 'Migración 003: TIMESTAMPTZ (era timestamp sin zona)']
+  Ultimo_acceso timestamptz [note: 'Migración 003: TIMESTAMPTZ']
+  Created_at timestamp [not null, default: `now()`]
+  Updated_at timestamp
+}
+
+// El perfil es quien recibe los permisos
+Table Perfil {
+  Id int [pk, increment]
+  Nombre_perfil varchar(50) [not null, unique, note: 'Superusuario, Usuario, Publico, RRHH, Contador...']
+  Descripcion varchar(200)
+  Activo boolean [not null, default: true]
+}
+
+// Un usuario puede tener varios perfiles; un perfil lo tienen muchos usuarios
+Table Usuario_Perfil {
+  Usuario_id int [not null, ref: > Usuario.Id]
+  Perfil_id int [not null, ref: > Perfil.Id]
+
+  indexes {
+    (Usuario_id, Perfil_id) [pk]
+    Perfil_id
+  }
+}
+
+// ------------------------------------------
+// SEGURIDAD: ESTRUCTURA DEL SISTEMA
+// ------------------------------------------
+
+// Agrupa opciones y clases. En la BD real: Session (sesión) y Security
+// (menú, admin y usuarios). Los nombres van en inglés (migración 004).
+Table Subsistema {
+  Id int [pk, increment]
+  Nombre varchar(60) [not null, unique, note: 'Alfanumérico, sin espacios ni _ (CHECK)']
+  Descripcion varchar(200)
+  Activo boolean [not null, default: true]
+}
+
+// Lo que el usuario VE: ítems de menú / pantallas
+Table Opcion {
+  Id int [pk, increment]
+  Subsistema_id int [not null, ref: > Subsistema.Id]
+  Nombre varchar(80) [not null, note: 'Ej. registrar, Usuarios, Perfiles']
+  Descripcion varchar(200)
+  Orden smallint [not null, default: 0, note: 'Orden de aparición en el menú']
+  Activo boolean [not null, default: true]
+
+  indexes {
+    (Subsistema_id, Nombre) [unique]
+  }
+}
+
+// Objetos de negocio (Business Objects) del subsistema. En la BD real:
+// Session (subsistema Session); Menu, Admin y User (subsistema Security).
+Table Clase {
+  Id int [pk, increment]
+  Subsistema_id int [not null, ref: > Subsistema.Id]
+  Nombre varchar(80) [not null, note: 'Idéntico a la clase del backend; alfanumérico, sin _ (CHECK)']
+  Descripcion varchar(200)
+  Activo boolean [not null, default: true]
+
+  indexes {
+    (Subsistema_id, Nombre) [unique]
+  }
+}
+
+// Lo que el backend EJECUTA: métodos de negocio de cada clase
+Table Metodo {
+  Id int [pk, increment]
+  Clase_id int [not null, ref: > Clase.Id]
+  Nombre varchar(80) [not null, note: 'Idéntico al método del backend; alfanumérico, sin _ (CHECK)']
+  Descripcion varchar(200)
+  Activo boolean [not null, default: true]
+
+  indexes {
+    (Clase_id, Nombre) [unique]
+  }
+}
+
+// ------------------------------------------
+// SEGURIDAD: PERMISOS (las tablas intermedias SON el permiso)
+// ------------------------------------------
+
+// Qué opciones (menú/pantallas) ve cada perfil
+Table Permiso_Opcion {
+  Perfil_id int [not null, ref: > Perfil.Id]
+  Opcion_id int [not null, ref: > Opcion.Id]
+
+  indexes {
+    (Perfil_id, Opcion_id) [pk]
+    Opcion_id
+  }
+}
+
+// Qué métodos puede ejecutar cada perfil
+Table Permiso_Metodo {
+  Perfil_id int [not null, ref: > Perfil.Id]
+  Metodo_id int [not null, ref: > Metodo.Id]
+
+  indexes {
+    (Perfil_id, Metodo_id) [pk]
+    Metodo_id
+  }
+
+  Note: 'Llave del mapa en memoria: Subsistema_Clase_metodo_perfilId (con nombres)'
+}
+
+// ------------------------------------------
+// CATÁLOGOS
+// ------------------------------------------
+
+Table Banco {
+  Id int [pk, increment]
+  Codigo varchar(10) [not null, unique, note: 'Código del banco (ej. 0102)']
+  Nombre varchar(100) [not null, unique]
+  Activo boolean [not null, default: true]
+}
+
+Table Cargo {
+  Id int [pk, increment]
+  Nombre varchar(100) [not null, unique]
+  Descripcion varchar(200)
+  Activo boolean [not null, default: true]
+}
+
+// ------------------------------------------
+// PERSONA (datos personales del trabajador)
+// ------------------------------------------
+
+Table Persona {
+  Id int [pk, increment]
+  Cedula varchar(20) [not null, unique]
+  Rif varchar(20) [unique, note: 'Migración 002: se agregó Rif (faltaba en 001)']
+  Primer_nombre varchar(60) [not null]
+  Segundo_nombre varchar(60)
+  Primer_apellido varchar(60) [not null]
+  Segundo_apellido varchar(60)
+  Fecha_nacimiento date
+  Sexo sexo
+  Estado_civil estado_civil
+  Nro_tlf varchar(20)
+  Email varchar(120) [unique]
+  Direccion varchar(250)
+  Estado estado_persona [not null, default: 'ACTIVO']
+  Created_at timestamp [not null, default: `now()`]
+  Updated_at timestamp
+
+  Note: 'Fecha de ingreso y egreso no se guardan aquí: se derivan de Contrato.'
+}
+
+Table Cuenta_bancaria {
+  Id int [pk, increment]
+  Persona_id int [not null, ref: > Persona.Id]
+  Banco_id int [not null, ref: > Banco.Id]
+  Tipo_cuenta tipo_cuenta [not null]
+  Nro_cuenta varchar(30) [not null]
+  Es_principal boolean [not null, default: false]
+  Activa boolean [not null, default: true]
+
+  indexes {
+    (Banco_id, Nro_cuenta) [unique]
+    Persona_id
+  }
+
+  Note: 'Pendiente (regla de BD): solo una cuenta principal activa por persona (índice único parcial).'
+}
+
+// ------------------------------------------
+// CONTRATACIÓN
+// ------------------------------------------
+
+Table Contrato {
+  Id int [pk, increment]
+  Persona_id int [not null, ref: > Persona.Id]
+  Cargo_id int [not null, ref: > Cargo.Id]
+  Fecha_inicio date [not null]
+  Fecha_fin date
+  Tipo_pago tipo_pago [not null]
+  Frecuencia_pago frecuencia_pago [not null]
+  Horas_semanales decimal(5,2) [note: 'Jornada base; necesaria para POR_HORA y horas extra']
+  Estado estado_contrato [not null, default: 'VIGENTE']
+  Created_at timestamp [not null, default: `now()`]
+
+  indexes {
+    (Persona_id, Estado)
+  }
+
+  Note: 'CHECK chk_contrato_fechas: Fecha_fin IS NULL OR Fecha_fin >= Fecha_inicio. Pendiente (regla de BD): sin dos contratos VIGENTES solapados por persona.'
+}
+
+// Historial salarial: un aumento = una fila nueva
+Table Contrato_salario {
+  Id int [pk, increment]
+  Contrato_id int [not null, ref: > Contrato.Id]
+  Monto decimal(12,2) [not null, note: 'Por hora si POR_HORA; por período completo si SALARIO_FIJO']
+  Vigente_desde date [not null]
+  Vigente_hasta date
+  Motivo varchar(150)
+
+  indexes {
+    (Contrato_id, Vigente_desde) [unique]
+  }
+}
+
+// ------------------------------------------
+// SEGURO SOCIAL Y APORTES DE LEY
+// ------------------------------------------
+
+Table Tipo_aporte_ley {
+  Id int [pk, increment]
+  Codigo varchar(30) [not null, unique, note: 'SSO / PARO_FORZOSO / VIVIENDA']
+  Nombre varchar(100) [not null]
+  Entidad varchar(100) [note: 'IVSS, INCES, BANAVIH...']
+  Concepto_deduccion_id int [ref: > Concepto.Id, note: 'Concepto de la deducción al trabajador']
+  Concepto_patronal_id int [ref: > Concepto.Id, note: 'Concepto del aporte del patrono']
+}
+
+Table Parametro_aporte_ley {
+  Id int [pk, increment]
+  Tipo_aporte_id int [not null, ref: > Tipo_aporte_ley.Id]
+  Tasa_empleado decimal(6,4) [not null, note: '0.0400 = 4%']
+  Tasa_patronal decimal(6,4) [not null, note: '0.1000 = 10%']
+  Tope_base decimal(12,2) [note: 'Salario máximo sobre el que se calcula']
+  Piso_base decimal(12,2) [note: 'Base mínima de cálculo']
+  Vigente_desde date [not null]
+  Vigente_hasta date
+  Base_legal varchar(200)
+
+  indexes {
+    (Tipo_aporte_id, Vigente_desde) [unique]
+  }
+}
+
+Table Afiliacion_ley {
+  Id int [pk, increment]
+  Persona_id int [not null, ref: > Persona.Id]
+  Tipo_aporte_id int [not null, ref: > Tipo_aporte_ley.Id]
+  Nro_afiliacion varchar(30) [not null]
+  Fecha_inscripcion date [not null]
+  Fecha_baja date
+  Estado estado_afiliacion [not null, default: 'ACTIVO']
+
+  indexes {
+    (Persona_id, Tipo_aporte_id) [unique]
+  }
+}
+
+// ------------------------------------------
+// CONCEPTOS Y NÓMINA
+// ------------------------------------------
+
+Table Concepto {
+  Id int [pk, increment]
+  Codigo varchar(30) [not null, unique]
+  Nombre_concepto varchar(100) [not null]
+  Tipo_concepto tipo_concepto [not null]
+  Categoria categoria_concepto [not null]
+  Unidad unidad_concepto [not null, default: 'MONTO', note: 'Unidad en que se carga la novedad']
+  Afecta_base_ley boolean [not null, default: false, note: 'Si suma a la base de cálculo de aportes de ley']
+  Codigo_cuenta_contable varchar(30)
+  Activo boolean [not null, default: true]
+}
+
+// Conceptos recurrentes por persona: bonos fijos, deducciones opcionales
+Table Concepto_persona {
+  Id int [pk, increment]
+  Persona_id int [not null, ref: > Persona.Id]
+  Concepto_id int [not null, ref: > Concepto.Id]
+  Tipo_valor tipo_valor [not null, default: 'MONTO_FIJO']
+  Valor decimal(12,4) [not null, note: 'Monto, o fracción del salario si es PORCENTAJE_SALARIO (0.1000 = 10%)']
+  Vigente_desde date [not null]
+  Vigente_hasta date [note: 'Null = sin fecha de fin']
+  Observacion varchar(200)
+  Created_at timestamp [not null, default: `now()`]
+
+  indexes {
+    (Persona_id, Concepto_id, Vigente_desde) [unique]
+  }
+
+  Note: 'CHECK: Valor >= 0.'
+}
+
+Table Periodo_Nomina {
+  Id int [pk, increment]
+  Fecha_inicio date [not null]
+  Fecha_fin date [not null]
+  Frecuencia frecuencia_pago [not null]
+  Estado estado_periodo [not null, default: 'BORRADOR']
+  Descripcion varchar(200)
+  Procesado_por int [ref: > Usuario.Id]
+  Fecha_proceso timestamp
+  Created_at timestamp [not null, default: `now()`]
+
+  indexes {
+    (Frecuencia, Fecha_inicio, Fecha_fin) [unique]
+  }
+
+  Note: 'CHECK chk_periodo_fechas: Fecha_fin >= Fecha_inicio. Solo entran personas con contrato de la misma frecuencia.'
+}
+
+// Insumos variables del cálculo: horas extra, faltas, bonos puntuales
+Table Novedad {
+  Id int [pk, increment]
+  Persona_id int [not null, ref: > Persona.Id]
+  Concepto_id int [not null, ref: > Concepto.Id]
+  Periodo_Nomina_id int [not null, ref: > Periodo_Nomina.Id]
+  Fecha date [not null]
+  Cantidad decimal(8,2) [note: 'Horas o días, según la unidad del concepto']
+  Monto decimal(12,2) [note: 'Solo si la unidad del concepto es MONTO']
+  Estado estado_novedad [not null, default: 'PENDIENTE']
+  Observacion varchar(200)
+  Registrado_por int [not null, ref: > Usuario.Id]
+  Aprobado_por int [ref: > Usuario.Id]
+  Created_at timestamp [not null, default: `now()`]
+
+  indexes {
+    (Persona_id, Periodo_Nomina_id)
+    Estado
+  }
+}
+
+Table Recibo_pago {
+  Id int [pk, increment]
+  Persona_id int [not null, ref: > Persona.Id]
+  Periodo_Nomina_id int [not null, ref: > Periodo_Nomina.Id]
+  Contrato_id int [not null, ref: > Contrato.Id]
+  Fecha_emision date [not null]
+  Total_asignaciones decimal(12,2) [not null]
+  Total_deducciones decimal(12,2) [not null]
+  Monto_total decimal(12,2) [not null, note: 'Neto a pagar = asignaciones - deducciones (excluye aportes patronales)']
+  Estado estado_recibo [not null, default: 'PENDIENTE']
+
+  // Datos del pago (se llenan al pagar)
+  Fecha_pago date
+  Metodo_pago metodo_pago
+  Cuenta_bancaria_id int [ref: > Cuenta_bancaria.Id, note: 'Null si es efectivo']
+  Referencia_pago varchar(60) [note: 'Nro. de transferencia / cheque']
+  Pagado_por int [ref: > Usuario.Id]
+
+  Created_at timestamp [not null, default: `now()`]
+
+  indexes {
+    (Persona_id, Periodo_Nomina_id) [unique]
+    Periodo_Nomina_id
+  }
+
+  Note: 'CHECK chk_recibo_pago: si Estado = PAGADO, Fecha_pago y Metodo_pago son obligatorios.'
+}
+
+Table Detalle_recibo {
+  Id int [pk, increment]
+  Recibo_pago_id int [not null, ref: > Recibo_pago.Id]
+  Concepto_id int [not null, ref: > Concepto.Id]
+  Cuota_prestamo_id int [unique, ref: > Cuota_prestamo.Id, note: 'Solo si la línea es el descuento de una cuota']
+  Novedad_id int [ref: > Novedad.Id, note: 'Novedad que originó la línea, si aplica']
+  Concepto_persona_id int [ref: > Concepto_persona.Id, note: 'Bono/deducción recurrente que originó la línea, si aplica']
+  Parametro_aporte_id int [ref: > Parametro_aporte_ley.Id, note: 'Congela la tasa de ley usada (deducción o aporte patronal)']
+  Base_calculo decimal(12,2)
+  Tasa_aplicada decimal(6,4)
+  Cantidad_unidades decimal(8,2) [note: 'Horas, días, etc.']
+  Monto decimal(12,2) [not null]
+
+  indexes {
+    Recibo_pago_id
+    Concepto_id
+  }
+
+  Note: 'CHECK chk_origen_unico: como máximo UNA de las 4 columnas de origen (Cuota, Novedad, Concepto_persona, Parametro) tiene valor. Las líneas APORTE_PATRONAL no suman a deducciones ni al neto.'
+}
+
+// ------------------------------------------
+// PRÉSTAMOS
+// ------------------------------------------
+
+Table Prestamo {
+  Id int [pk, increment]
+  Persona_id int [not null, ref: > Persona.Id]
+  Fecha_otorgamiento date [not null]
+  Monto_total decimal(12,2) [not null]
+  Nro_cuotas smallint [not null]
+  Cuota_periodica decimal(12,2) [not null]
+  Tasa_interes decimal(6,4) [not null, default: 0]
+  Estado estado_prestamo [not null, default: 'SOLICITADO']
+  Aprobado_por int [ref: > Usuario.Id]
+  Created_at timestamp [not null, default: `now()`]
+
+  indexes {
+    (Persona_id, Estado)
+  }
+
+  Note: 'Saldo pendiente = SUM(Cuota_prestamo.Monto_cuota) con Estado = PENDIENTE (vista, no campo).'
+}
+
+Table Cuota_prestamo {
+  Id int [pk, increment]
+  Prestamo_id int [not null, ref: > Prestamo.Id]
+  Nro_cuota smallint [not null]
+  Fecha_vencimiento date [not null]
+  Monto_capital decimal(12,2) [not null]
+  Monto_interes decimal(12,2) [not null, default: 0]
+  Monto_cuota decimal(12,2) [not null]
+  Estado estado_cuota [not null, default: 'PENDIENTE']
+
+  indexes {
+    (Prestamo_id, Nro_cuota) [unique]
+    (Estado, Fecha_vencimiento)
+  }
+}
+
+// ------------------------------------------
+// GRUPOS (para ordenar el diagrama)
+// ------------------------------------------
+
+TableGroup Seguridad_Identidad {
+  Usuario
+  Perfil
+  Usuario_Perfil
+}
+
+TableGroup Seguridad_Estructura {
+  Subsistema
+  Opcion
+  Clase
+  Metodo
+}
+
+TableGroup Seguridad_Permisos {
+  Permiso_Opcion
+  Permiso_Metodo
+}
+
+TableGroup Personal {
+  Persona
+  Cuenta_bancaria
+  Banco
+  Cargo
+  Contrato
+  Contrato_salario
+}
+
+TableGroup Ley_y_Seguro_Social {
+  Tipo_aporte_ley
+  Parametro_aporte_ley
+  Afiliacion_ley
+}
+
+TableGroup Nomina {
+  Concepto
+  Concepto_persona
+  Novedad
+  Periodo_Nomina
+  Recibo_pago
+  Detalle_recibo
+}
+
+TableGroup Prestamos {
+  Prestamo
+  Cuota_prestamo
+}

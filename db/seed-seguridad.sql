@@ -1,6 +1,7 @@
--- Security: subsistema, clases (Session, Menu, Admin, User), sus métodos y
--- los perfiles 'Publico' y 'Superusuario' con sus permisos.
--- Correr DESPUÉS de db/migrations/002_esquema_seguridad.sql.
+-- Sesión y seguridad: dos subsistemas. 'Session' agrupa la autenticación
+-- (clase Session); 'Security' agrupa Menu, Admin y User. Se siembran sus
+-- métodos y los perfiles 'Publico' y 'Superusuario' con sus permisos.
+-- Correr DESPUÉS de db/migrations/006_subsistema_sesion.sql.
 -- Idempotente: se puede correr varias veces sin duplicar datos.
 -- Crea por sí mismo el perfil 'Superusuario' (no depende de
 -- db/seed-superusuario.sql, que solo asigna el usuario de prueba).
@@ -11,16 +12,20 @@
 BEGIN;
 
 INSERT INTO subsistema (nombre, descripcion)
-VALUES ('Security', 'Autenticación, sesiones y permisos')
+VALUES ('Security', 'Permisos, menú y administración')
+ON CONFLICT (nombre) DO NOTHING;
+
+INSERT INTO subsistema (nombre, descripcion)
+VALUES ('Session', 'Autenticación y sesiones')
 ON CONFLICT (nombre) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
--- Clase Sesion: autenticación como objeto de negocio.
+-- Clase Session: autenticación como objeto de negocio. Subsistema 'Session'.
 -- ---------------------------------------------------------------------------
 INSERT INTO clase (subsistema_id, nombre, descripcion)
 SELECT s.id, 'Session', 'Objeto de negocio de autenticación'
 FROM subsistema s
-WHERE s.nombre = 'Security'
+WHERE s.nombre = 'Session'
 ON CONFLICT (subsistema_id, nombre) DO NOTHING;
 
 INSERT INTO metodo (clase_id, nombre, descripcion)
@@ -33,7 +38,7 @@ CROSS JOIN (VALUES
     ('sessionExist', 'Indica si hay una sesión vigente')
 ) AS m(nombre, descripcion)
 WHERE c.nombre = 'Session'
-  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
+  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Session')
 ON CONFLICT (clase_id, nombre) DO NOTHING;
 
 -- Clase Menu: las opciones visibles del usuario. Se autoriza a 'Publico'
@@ -108,7 +113,7 @@ SELECT pf.id, m.id
 FROM perfil pf
 JOIN clase c
   ON c.nombre = 'Session'
- AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
+ AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Session')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre IN ('login', 'logout', 'sessionExist', 'getSession')
@@ -140,13 +145,22 @@ WHERE pf.nombre_perfil = 'Publico'
   AND m.nombre = 'cambiarClave'
 ON CONFLICT DO NOTHING;
 
--- Superusuario: permiso a TODOS los métodos de Seguridad (logout, admin y
--- usuario incluidos).
+-- Superusuario: permiso a TODOS los métodos de Session y de Security
+-- (logout, admin y usuario incluidos).
 INSERT INTO permiso_metodo (perfil_id, metodo_id)
 SELECT pf.id, m.id
 FROM perfil pf
 JOIN clase c
-  ON c.nombre IN ('Session', 'Menu', 'Admin', 'User')
+  ON c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Session')
+JOIN metodo m ON m.clase_id = c.id
+WHERE pf.nombre_perfil = 'Superusuario'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO permiso_metodo (perfil_id, metodo_id)
+SELECT pf.id, m.id
+FROM perfil pf
+JOIN clase c
+  ON c.nombre IN ('Menu', 'Admin', 'User')
  AND c.subsistema_id = (SELECT id FROM subsistema WHERE nombre = 'Security')
 JOIN metodo m ON m.clase_id = c.id
 WHERE pf.nombre_perfil = 'Superusuario'

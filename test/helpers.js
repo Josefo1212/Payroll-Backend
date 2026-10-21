@@ -4,7 +4,7 @@ import bcrypt from "bcrypt";
 import { db } from "../src/database/Database.js";
 import { queries } from "../src/queries/loader.js";
 import { Security, security } from "../src/security/Security.js";
-import { Session } from "../src/bo/Security/Session.js";
+import { Session } from "../src/bo/Session/Session.js";
 
 // ---------------------------------------------------------------------------
 // Guardián anti-BD-real: al importar este módulo, el singleton `security`
