@@ -4,6 +4,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { db } from "../database/Database.js";
 import { queries } from "../queries/loader.js";
 import { ErrorNegocio } from "../errors/ErrorNegocio.js";
+import {
+  llaveMetodo,
+  llaveOpcion,
+} from "../services/PermissionKeyService.js";
 
 const BO_DIR_POR_DEFECTO = fileURLToPath(new URL("../bo", import.meta.url));
 
@@ -99,14 +103,14 @@ class Security {
     const mapasMetodos = new Map();
     for (const fila of metodos.rows) {
       mapasMetodos.set(
-        `${fila.subsistema}_${fila.clase}_${fila.metodo}_${fila.perfil_id}`,
+        llaveMetodo(fila.subsistema, fila.clase, fila.metodo, fila.perfil_id),
         true,
       );
     }
 
     const mapasOpciones = new Map();
     for (const fila of opciones.rows) {
-      mapasOpciones.set(`${fila.subsistema}_${fila.opcion}_${fila.perfil_id}`, {
+      mapasOpciones.set(llaveOpcion(fila.subsistema, fila.opcion, fila.perfil_id), {
         id: fila.opcion_id,
         nombre: fila.opcion,
         orden: fila.orden,
@@ -127,7 +131,7 @@ class Security {
   };
 
   setPermissionMethod = (subsistema, clase, metodo, perfilId, permitido = true) => {
-    const llave = `${subsistema}_${clase}_${metodo}_${perfilId}`;
+    const llave = llaveMetodo(subsistema, clase, metodo, perfilId);
     if (permitido) {
       this.PermissionMethodMap.set(llave, true);
     } else {
@@ -136,7 +140,7 @@ class Security {
   };
 
   setPermissionOption = (subsistema, opcion, perfilId, datos = null) => {
-    const llave = `${subsistema}_${opcion}_${perfilId}`;
+    const llave = llaveOpcion(subsistema, opcion, perfilId);
     if (datos) {
       this.PermissionOptionMap.set(llave, datos);
     } else {
@@ -222,7 +226,7 @@ class Security {
         : perfiles;
 
     const autorizado = perfilesEfectivos.some((perfilId) =>
-      this.getPermissionMethod(`${subsystem}_${clase}_${method}_${perfilId}`),
+      this.getPermissionMethod(llaveMetodo(subsystem, clase, method, perfilId)),
     );
 
     if (!autorizado) {

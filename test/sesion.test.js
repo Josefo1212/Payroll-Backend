@@ -1,7 +1,7 @@
 import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import bcrypt from "bcrypt";
-import { pausaCredenciales } from "../src/bo/Security/Session.js";
+import { pausaCredenciales } from "../src/services/LoginThrottle.js";
 import {
   crearDbFalso,
   peticion,

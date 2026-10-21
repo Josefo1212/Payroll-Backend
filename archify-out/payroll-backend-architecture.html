@@ -5168,8 +5168,9 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <path data-edge-from="security" data-edge-to="bo" data-edge-label="reflexión" data-edge-key="4" data-edge-id="security-bo" data-composition-points="630,256;710,256" d="M 630 256 L 710 256" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="bo" data-edge-to="db" data-edge-label="solo los BO tocan la BD" data-edge-key="5" data-edge-id="bo-db" data-composition-points="890,256;970,256" d="M 890 256 L 970 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="bo" data-edge-to="services" data-edge-label="lógica reutilizable" data-edge-key="6" data-edge-id="bo-services" data-composition-points="800,292;800,360" d="M 800 292 L 800 360" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="db" data-edge-to="queries" data-edge-label="carga al arrancar" data-edge-key="7" data-edge-id="db-queries" data-composition-points="1055,220;1055,128" d="M 1055 220 L 1055 128" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="db" data-edge-to="neon" data-edge-label="SQL parametrizado" data-edge-key="8" data-edge-id="db-neon" data-composition-points="1140,256;1170,256" d="M 1140 256 L 1170 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="security" data-edge-to="services" data-edge-label="arma llaves" data-edge-key="7" data-edge-id="security-services" data-composition-points="550,292;550,316;686,316;686,394;710,394" d="M 550 292 L 550 308 Q 550 316 558 316 L 678 316 Q 686 316 686 324 L 686 386 Q 686 394 694 394 L 710 394" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="db" data-edge-to="queries" data-edge-label="carga al arrancar" data-edge-key="8" data-edge-id="db-queries" data-composition-points="1055,220;1055,128" d="M 1055 220 L 1055 128" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="db" data-edge-to="neon" data-edge-label="SQL parametrizado" data-edge-key="9" data-edge-id="db-neon" data-composition-points="1140,256;1170,256" d="M 1140 256 L 1170 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
 
         <!-- Components -->
         <g id="node-cliente" data-node-id="cliente" data-node-label="Cliente Web" tabindex="0" role="button" aria-label="Focus Cliente Web, execute(), Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="execute()" data-node-tag="otro repo" data-node-context="Architecture component">
@@ -5224,8 +5225,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="800" y="284" class="t-backend" font-size="7" text-anchor="middle">Session · Menu · Admin · User</text>
         </g>
 
-        <g id="node-services" data-node-id="services" data-node-label="Servicios" tabindex="0" role="button" aria-label="Focus Servicios, src/services, Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="src/services" data-node-tag="PasswordService" data-node-context="Backend monolítico · Node.js">
-          <title>Servicios · src/services · Backend monolítico · Node.js · PasswordService</title>
+        <g id="node-services" data-node-id="services" data-node-label="Servicios" tabindex="0" role="button" aria-label="Focus Servicios, src/services, Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="src/services" data-node-tag="Password · Permisos · Login" data-node-context="Backend monolítico · Node.js">
+          <title>Servicios · src/services · Backend monolítico · Node.js · Password · Permisos · Login</title>
           <rect x="710" y="360" width="180" height="68" rx="6" class="c-mask"/>
           <rect x="710" y="360" width="180" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(716 366) scale(0.6875)">
@@ -5233,7 +5234,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           </g>
           <text data-node-label="" data-detail-anchor="" x="800" y="392" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Servicios</text>
         <text data-detail="context" x="800" y="408" class="t-muted" font-size="9" text-anchor="middle">src/services</text>
-        <text data-detail="fine" x="800" y="420" class="t-backend" font-size="7" text-anchor="middle">PasswordService</text>
+        <text data-detail="fine" x="800" y="420" class="t-backend" font-size="7" text-anchor="middle">Password · Permisos · Login</text>
         </g>
 
         <g id="node-db" data-node-id="db" data-node-label="Componente de datos" tabindex="0" role="button" aria-label="Focus Componente de datos, query() · transaction(), Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="query() · transaction()" data-node-tag="Database.js" data-node-context="Backend monolítico · Node.js">
@@ -5332,11 +5333,15 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <rect x="749.4" y="296" width="101.2" height="14" rx="3" class="c-mask"/>
           <text x="800" y="306" class="t-messagebus" font-size="8" text-anchor="middle">lógica reutilizable</text>
         </g>
-        <g data-detail="context" data-edge-from="db" data-edge-to="queries" data-edge-label="carga al arrancar" data-edge-key="7" data-edge-id="db-queries">
+        <g data-detail="context" data-edge-from="security" data-edge-to="services" data-edge-label="arma llaves" data-edge-key="7" data-edge-id="security-services">
+          <rect x="586.6" y="296" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="618" y="306" class="t-messagebus" font-size="8" text-anchor="middle">arma llaves</text>
+        </g>
+        <g data-detail="context" data-edge-from="db" data-edge-to="queries" data-edge-label="carga al arrancar" data-edge-key="8" data-edge-id="db-queries">
           <rect x="1009.2" y="200" width="91.6" height="14" rx="3" class="c-mask"/>
           <text x="1055" y="210" class="t-messagebus" font-size="8" text-anchor="middle">carga al arrancar</text>
         </g>
-        <g data-detail="context" data-edge-from="db" data-edge-to="neon" data-edge-label="SQL parametrizado" data-edge-key="8" data-edge-id="db-neon">
+        <g data-detail="context" data-edge-from="db" data-edge-to="neon" data-edge-label="SQL parametrizado" data-edge-key="9" data-edge-id="db-neon">
           <rect x="1109.2" y="292" width="91.6" height="14" rx="3" class="c-mask"/>
           <text x="1155" y="302" class="t-muted" font-size="8" text-anchor="middle">SQL parametrizado</text>
         </g>
@@ -5601,8 +5606,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </div>
         <ul>
           <li>&bull; Lógica reutilizable sin BD ni sesión</li>
-          <li>&bull; PasswordService: hash (bcrypt) y política de claves</li>
-          <li>&bull; Los BO orquestan; el servicio no conoce Express</li>
+          <li>&bull; PasswordService, PermissionKeyService, LoginThrottle</li>
+          <li>&bull; Los BO y Security orquestan; el servicio no conoce Express</li>
         </ul>
       </div>
     </div>

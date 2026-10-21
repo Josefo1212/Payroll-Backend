@@ -1,21 +1,11 @@
 import { queries } from "../../queries/loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { passwordService } from "../../services/PasswordService.js";
+import { pausaCredenciales } from "../../services/LoginThrottle.js";
 import {
   MAX_INTENTOS_FALLIDOS as MAX_INTENTOS,
   MINUTOS_BLOQUEO,
 } from "../../config/security.js";
-
-const RETARDO_MAX = Number(process.env.LOGIN_FAIL_DELAY_MS ?? 400);
-
-const pausaCredenciales = async (retardoMax = RETARDO_MAX) => {
-  if (!(retardoMax > 0)) {
-    return;
-  }
-  const minimo = Math.floor(retardoMax / 2);
-  const espera = minimo + Math.floor(Math.random() * (retardoMax - minimo + 1));
-  await new Promise((resolve) => setTimeout(resolve, espera));
-};
 
 const MENSAJE_CREDENCIALES = "Usuario o contraseña incorrectos";
 
@@ -86,6 +76,13 @@ export class Session {
     return { ok: true };
   }
 
+  async #rechazar(password, mensaje, status, log) {
+    await passwordService.verificarContraDummy(password);
+    await pausaCredenciales();
+    console.log(log);
+    throw new ErrorNegocio(mensaje, status);
+  }
+
   async #authenticate(username, password) {
     if (
       typeof username !== "string" ||
@@ -102,26 +99,29 @@ export class Session {
     const usuario = rows[0];
 
     if (!usuario) {
-      await passwordService.verificarContraDummy(password);
-      await pausaCredenciales();
-      console.log("Login fallido: credenciales inválidas.");
-      throw new ErrorNegocio(MENSAJE_CREDENCIALES, 401);
+      await this.#rechazar(
+        password,
+        MENSAJE_CREDENCIALES,
+        401,
+        "Login fallido: credenciales inválidas.",
+      );
     }
 
     if (!usuario.activo) {
-      await passwordService.verificarContraDummy(password);
-      await pausaCredenciales();
-      console.log(`Login denegado: usuario ${usuario.id} inactivo.`);
-      throw new ErrorNegocio("La cuenta está desactivada.", 403);
+      await this.#rechazar(
+        password,
+        "La cuenta está desactivada.",
+        403,
+        `Login denegado: usuario ${usuario.id} inactivo.`,
+      );
     }
 
     if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
-      await passwordService.verificarContraDummy(password);
-      await pausaCredenciales();
-      console.log(`Login denegado: usuario ${usuario.id} bloqueado.`);
-      throw new ErrorNegocio(
+      await this.#rechazar(
+        password,
         "La cuenta está bloqueada temporalmente por intentos fallidos.",
         423,
+        `Login denegado: usuario ${usuario.id} bloqueado.`,
       );
     }
 
@@ -170,5 +170,3 @@ export class Session {
     };
   }
 }
-
-export { pausaCredenciales };
