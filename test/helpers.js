@@ -44,7 +44,7 @@ const HASH_CLAVE = await bcrypt.hash("Password123", 4);
 const HASH_DUMMY = "$2b$12$LybMgOxOi4wCQe0BWoOKXuuEnpNuJm8XqE5ORx8y1kLkuOfiu7zSO";
 
 const USUARIO_OK = {
-  id: 1,
+  id: "11111111-1111-4111-8111-111111111111",
   username: "admin",
   password_hash: HASH_CLAVE,
   persona_id: 10,
@@ -66,6 +66,7 @@ function crearDbFalso({
   opciones = [],
   sesionPorUsuario = null,
   perfilesActivos = null,
+  refresco = null,
 } = {}) {
   const llamadas = [];
   const estado = {
@@ -166,6 +167,18 @@ function crearDbFalso({
       }
       if (texto === queries.updatePassword) {
         return { rows: [{ id: params[1] }] };
+      }
+      if (texto === queries.insertRefreshToken) {
+        return { rows: [{ id: params[1] ?? "22222222-2222-4222-8222-222222222222" }] };
+      }
+      if (texto === queries.findRefreshTokenByHash) {
+        return { rows: refresco ? [refresco] : [] };
+      }
+      if (texto === queries.revokeRefreshToken) {
+        return { rows: [{ id: params[0] }] };
+      }
+      if (texto === queries.revokeFamily || texto === queries.revokeAllUserTokens) {
+        return { rows: [] };
       }
 
       throw new Error(`Consulta no simulada: ${texto}`);

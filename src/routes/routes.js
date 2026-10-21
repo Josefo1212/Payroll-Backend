@@ -13,4 +13,13 @@ routes.post("/execute", async (req, res) => {
   res.status(status).json(body);
 });
 
+routes.post("/refresh", async (req, res) => {
+  const { status, body } = await security.executeMethod(
+    { subsystem: "Session", class: "Token", method: "refresh", params: [] },
+    req,
+  );
+
+  res.status(status).json(body);
+});
+
 export default routes;

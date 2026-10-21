@@ -8,10 +8,29 @@ import {
   llaveMetodo,
   llaveOpcion,
 } from "../services/PermissionKeyService.js";
+import { tokenService } from "../services/TokenService.js";
 
 const BO_DIR_POR_DEFECTO = fileURLToPath(new URL("../bo", import.meta.url));
 
 const NOMBRE_VALIDO = /^[A-Za-z0-9]+$/;
+
+const leerCookie = (req, nombre) => {
+  if (req?.cookies?.[nombre]) {
+    return req.cookies[nombre];
+  }
+
+  const crudo = req?.headers?.cookie;
+  if (!crudo) {
+    return null;
+  }
+
+  const par = crudo
+    .split(";")
+    .map((parte) => parte.trim())
+    .find((parte) => parte.startsWith(`${nombre}=`));
+
+  return par ? decodeURIComponent(par.slice(nombre.length + 1)) : null;
+};
 
 const moduloFaltante = (error) => {
   const coincidencia = /Cannot find module '([^']+)'/.exec(error?.message ?? "");
@@ -152,6 +171,25 @@ class Security {
 
   getPermissionOption = (key) => this.PermissionOptionMap.get(key) ?? null;
 
+  #hidratarDesdeAccess = async (req) => {
+    const token = leerCookie(req, "access_token");
+    if (!token) {
+      return;
+    }
+
+    const payload = await tokenService.verificarAccess(token);
+    if (!payload?.sub) {
+      return;
+    }
+
+    req.session = req.session ?? {};
+    req.session.userID = payload.sub;
+    req.session.userName = payload.userName ?? null;
+    req.session.profiles = Array.isArray(payload.perfiles) ? payload.perfiles : [];
+    req.session.detallesPerfiles = [];
+    req.session.origin = "access_token";
+  };
+
   getOptionsByProfiles = (perfilIds = []) => {
     const ids = new Set(perfilIds);
     const porId = new Map();
@@ -217,6 +255,8 @@ class Security {
         ? estado.perfiles_detalle
         : [];
       req.session.debeCambiarClave = Boolean(estado.debe_cambiar_clave);
+    } else {
+      await this.#hidratarDesdeAccess(req);
     }
 
     const perfiles = Array.isArray(req?.session?.profiles) ? req.session.profiles : [];

@@ -28,7 +28,7 @@ test("login ok: crea la sesión sin exponer el hash", async () => {
   const resultado = await bo.login("admin", "Password123");
 
   assert.deepEqual(resultado, {
-    userID: 1,
+    userID: USUARIO_OK.id,
     userName: "Admin Prueba",
     profiles: [
       { id: 2, nombre: "Superusuario" },
@@ -36,7 +36,7 @@ test("login ok: crea la sesión sin exponer el hash", async () => {
     ],
     debeCambiarClave: false,
   });
-  assert.equal(req.session.userID, 1);
+  assert.equal(req.session.userID, USUARIO_OK.id);
   assert.deepEqual(req.session.profiles, [2, 3]);
   assert.equal(req.session.password_hash, undefined);
   // Resetea intentos y último acceso.
