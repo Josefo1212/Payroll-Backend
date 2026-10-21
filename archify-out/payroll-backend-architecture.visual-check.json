@@ -7,8 +7,8 @@
   "visualReview": "pending",
   "artifact": {
     "path": "/home/josefo1212/JfPrograms/Web2/Payroll-Backend/archify-out/payroll-backend-architecture.html",
-    "sha256": "7928c30ed98de7e4b3f1f7d25e8757bf22c1e9f489642c7db0fd459fdbaae7f8",
-    "bytes": 821643
+    "sha256": "4841ee76d7c5ac437617af8288af1ee01f7219a05eaee7eee90099c248ed86a0",
+    "bytes": 821602
   },
   "state": {
     "detail": "read",
@@ -64,8 +64,8 @@
         "overflowX": false,
         "overflowY": false,
         "ok": true,
-        "readerWidth": 1504,
-        "diagramWidth": 1474,
+        "readerWidth": 1536,
+        "diagramWidth": 1506,
         "viewBoxWidth": 1380,
         "minimumProjectedNodeTextPx": 9,
         "minimumProjectedNodeText": "execute()",
@@ -194,8 +194,8 @@
         "overflowX": false,
         "overflowY": false,
         "ok": true,
-        "readerWidth": 1504,
-        "diagramWidth": 1474,
+        "readerWidth": 1536,
+        "diagramWidth": 1506,
         "viewBoxWidth": 1380,
         "minimumProjectedNodeTextPx": 9,
         "minimumProjectedNodeText": "execute()",
@@ -323,8 +323,8 @@
         "overflowX": false,
         "overflowY": false,
         "ok": true,
-        "readerWidth": 1504,
-        "diagramWidth": 1474,
+        "readerWidth": 1536,
+        "diagramWidth": 1506,
         "viewBoxWidth": 1380,
         "minimumProjectedNodeTextPx": 9,
         "minimumProjectedNodeText": "execute()",

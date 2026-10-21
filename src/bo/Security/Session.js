@@ -1,11 +1,21 @@
 import { queries } from "../../queries/loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { passwordService } from "../../services/PasswordService.js";
-import { pausaCredenciales } from "../../services/LoginThrottle.js";
 import {
   MAX_INTENTOS_FALLIDOS as MAX_INTENTOS,
   MINUTOS_BLOQUEO,
 } from "../../config/security.js";
+
+const RETARDO_MAX = Number(process.env.LOGIN_FAIL_DELAY_MS ?? 400);
+
+const pausaCredenciales = async (retardoMax = RETARDO_MAX) => {
+  if (!(retardoMax > 0)) {
+    return;
+  }
+  const minimo = Math.floor(retardoMax / 2);
+  const espera = minimo + Math.floor(Math.random() * (retardoMax - minimo + 1));
+  await new Promise((resolve) => setTimeout(resolve, espera));
+};
 
 const MENSAJE_CREDENCIALES = "Usuario o contraseña incorrectos";
 
@@ -170,3 +180,5 @@ export class Session {
     };
   }
 }
+
+export { pausaCredenciales };
