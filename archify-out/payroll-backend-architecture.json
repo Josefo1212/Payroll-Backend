@@ -14,13 +14,13 @@
   },
   "components": [
     { "id": "cliente", "type": "frontend", "label": "Cliente Web", "sublabel": "execute()", "tag": "otro repo", "pos": [40, 220], "size": [120, 72] },
-    { "id": "app", "type": "backend", "label": "Rutas /api", "sublabel": "routes.js · POST /execute", "tag": "Express 5", "pos": [240, 220], "size": [150, 72] },
-    { "id": "security", "type": "security", "label": "Security", "sublabel": "executeMethod()", "tag": "forma→permiso→reflexión", "pos": [470, 220], "size": [160, 72] },
-    { "id": "bo", "type": "backend", "label": "Objetos de negocio", "sublabel": "src/bo/Session · Security", "tag": "Session │ Menu · Admin · User", "pos": [710, 220], "size": [180, 72] },
-    { "id": "services", "type": "backend", "label": "Servicios", "sublabel": "src/services", "tag": "Password · Permisos", "pos": [710, 360], "size": [180, 68] },
+    { "id": "app", "type": "backend", "label": "Rutas /api", "sublabel": "routes.js", "tag": "POST /execute · /refresh", "pos": [240, 220], "size": [150, 72] },
+    { "id": "security", "type": "security", "label": "Security", "sublabel": "executeMethod()", "tag": "forma→sesión→permiso→reflexión", "pos": [470, 220], "size": [160, 72] },
+    { "id": "bo", "type": "backend", "label": "Objetos de negocio", "sublabel": "src/bo/Session · Security", "tag": "Session · Token │ Menu·Admin·User", "pos": [710, 220], "size": [180, 72] },
+    { "id": "services", "type": "backend", "label": "Servicios", "sublabel": "src/services", "tag": "Password · Permisos · Token", "pos": [710, 360], "size": [180, 68] },
     { "id": "db", "type": "backend", "label": "Componente de datos", "sublabel": "query() · transaction()", "tag": "Database.js", "pos": [970, 220], "size": [170, 72] },
     { "id": "neon", "type": "database", "label": "PostgreSQL · Neon", "sublabel": "pool máx 10", "brand": "postgresql", "tag": "sslmode=require", "pos": [1170, 220], "size": [170, 72] },
-    { "id": "sesion", "type": "backend", "label": "Sesión + CORS", "sublabel": "cookie connect.sid", "tag": "express-session", "pos": [240, 60], "size": [150, 68] },
+    { "id": "sesion", "type": "backend", "label": "Sesión + CORS", "sublabel": "connect.sid · access_token", "tag": "express-session + JWT", "pos": [240, 60], "size": [150, 68] },
     { "id": "permisos", "type": "security", "label": "Mapas en memoria", "sublabel": "PermissionMethodMap", "tag": "O(1) por perfil", "pos": [470, 60], "size": [160, 68] },
     { "id": "queries", "type": "backend", "label": "queries.yaml", "sublabel": "SQL parametrizado", "tag": "$1, $2", "pos": [970, 60], "size": [170, 68] }
   ],
@@ -30,7 +30,8 @@
   ],
   "connections": [
     { "id": "cliente-app", "from": "cliente", "to": "app", "label": "POST /api/execute", "variant": "emphasis", "labelDy": 56 },
-    { "id": "app-sesion", "from": "app", "to": "sesion", "label": "req.session", "fromSide": "top", "toSide": "bottom" },
+    { "id": "cliente-refresh", "from": "cliente", "to": "app", "label": "POST /api/refresh", "fromSide": "bottom", "toSide": "bottom", "labelAt": [240, 318] },
+    { "id": "app-sesion", "from": "app", "to": "sesion", "label": "req.session · access_token", "fromSide": "top", "toSide": "bottom" },
     { "id": "app-security", "from": "app", "to": "security", "label": "executeMethod", "variant": "emphasis", "labelDy": 56 },
     { "id": "security-permisos", "from": "security", "to": "permisos", "label": "resuelve permiso", "variant": "security", "fromSide": "top", "toSide": "bottom" },
     { "id": "security-bo", "from": "security", "to": "bo", "label": "reflexión", "variant": "security", "labelDy": 56 },
@@ -42,8 +43,8 @@
   ],
   "cards": [
     { "dot": "cyan", "title": "Punto de entrada único", "items": ["app.js monta el router /api (routes.js)", "El cliente no arma rutas por entidad", "Manda { subsystem, class, method, params }"] },
-    { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → permiso → reflexión → ejecución", "Permisos en mapas en memoria", "Llave: Subsistema_Clase_metodo_perfilId"] },
+    { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → sesión → permiso → reflexión", "Permisos en mapas en memoria", "Guard del access token: hidrata la sesión si no hay cookie"] },
     { "dot": "emerald", "title": "Datos", "items": ["Solo los objetos de negocio tocan la base", "A través del componente de datos, con parámetros", "Consultas en queries.yaml, leídas una vez"] },
-    { "dot": "violet", "title": "Servicios", "items": ["Lógica reutilizable sin BD ni sesión", "PasswordService y PermissionKeyService", "Los BO y Security orquestan; el servicio no conoce Express"] }
+    { "dot": "violet", "title": "Servicios", "items": ["Lógica reutilizable sin BD ni sesión", "PasswordService, PermissionKeyService y TokenService", "Access JWT en cookie; refresh rotativo por familia"] }
   ]
 }

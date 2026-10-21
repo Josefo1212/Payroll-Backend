@@ -5162,15 +5162,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <!-- Connection paths (before components for correct z-order) -->
         <path data-edge-from="cliente" data-edge-to="app" data-edge-label="POST /api/execute" data-edge-key="0" data-edge-id="cliente-app" data-composition-points="160,256;240,256" d="M 160 256 L 240 256" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="app" data-edge-to="sesion" data-edge-label="req.session" data-edge-key="1" data-edge-id="app-sesion" data-composition-points="315,220;315,128" d="M 315 220 L 315 128" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="app" data-edge-to="security" data-edge-label="executeMethod" data-edge-key="2" data-edge-id="app-security" data-composition-points="390,256;470,256" d="M 390 256 L 470 256" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="security" data-edge-to="permisos" data-edge-label="resuelve permiso" data-edge-key="3" data-edge-id="security-permisos" data-composition-points="550,220;550,128" d="M 550 220 L 550 128" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="security" data-edge-to="bo" data-edge-label="reflexión" data-edge-key="4" data-edge-id="security-bo" data-composition-points="630,256;710,256" d="M 630 256 L 710 256" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="bo" data-edge-to="db" data-edge-label="solo los BO tocan la BD" data-edge-key="5" data-edge-id="bo-db" data-composition-points="890,256;970,256" d="M 890 256 L 970 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="bo" data-edge-to="services" data-edge-label="lógica reutilizable" data-edge-key="6" data-edge-id="bo-services" data-composition-points="800,292;800,360" d="M 800 292 L 800 360" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="security" data-edge-to="services" data-edge-label="arma llaves" data-edge-key="7" data-edge-id="security-services" data-composition-points="550,292;550,316;686,316;686,394;710,394" d="M 550 292 L 550 308 Q 550 316 558 316 L 678 316 Q 686 316 686 324 L 686 386 Q 686 394 694 394 L 710 394" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="db" data-edge-to="queries" data-edge-label="carga al arrancar" data-edge-key="8" data-edge-id="db-queries" data-composition-points="1055,220;1055,128" d="M 1055 220 L 1055 128" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="db" data-edge-to="neon" data-edge-label="SQL parametrizado" data-edge-key="9" data-edge-id="db-neon" data-composition-points="1140,256;1170,256" d="M 1140 256 L 1170 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="cliente" data-edge-to="app" data-edge-label="POST /api/refresh" data-edge-key="1" data-edge-id="cliente-refresh" data-composition-points="100,292;100,316;315,316;315,292" d="M 100 292 L 100 308 Q 100 316 108 316 L 307 316 Q 315 316 315 308 L 315 292" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="app" data-edge-to="sesion" data-edge-label="req.session · access_token" data-edge-key="2" data-edge-id="app-sesion" data-composition-points="315,220;315,128" d="M 315 220 L 315 128" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="app" data-edge-to="security" data-edge-label="executeMethod" data-edge-key="3" data-edge-id="app-security" data-composition-points="390,256;470,256" d="M 390 256 L 470 256" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="security" data-edge-to="permisos" data-edge-label="resuelve permiso" data-edge-key="4" data-edge-id="security-permisos" data-composition-points="550,220;550,128" d="M 550 220 L 550 128" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="security" data-edge-to="bo" data-edge-label="reflexión" data-edge-key="5" data-edge-id="security-bo" data-composition-points="630,256;710,256" d="M 630 256 L 710 256" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="bo" data-edge-to="db" data-edge-label="solo los BO tocan la BD" data-edge-key="6" data-edge-id="bo-db" data-composition-points="890,256;970,256" d="M 890 256 L 970 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="bo" data-edge-to="services" data-edge-label="lógica reutilizable" data-edge-key="7" data-edge-id="bo-services" data-composition-points="800,292;800,360" d="M 800 292 L 800 360" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="security" data-edge-to="services" data-edge-label="arma llaves" data-edge-key="8" data-edge-id="security-services" data-composition-points="550,292;550,316;686,316;686,394;710,394" d="M 550 292 L 550 308 Q 550 316 558 316 L 678 316 Q 686 316 686 324 L 686 386 Q 686 394 694 394 L 710 394" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="db" data-edge-to="queries" data-edge-label="carga al arrancar" data-edge-key="9" data-edge-id="db-queries" data-composition-points="1055,220;1055,128" d="M 1055 220 L 1055 128" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="db" data-edge-to="neon" data-edge-label="SQL parametrizado" data-edge-key="10" data-edge-id="db-neon" data-composition-points="1140,256;1170,256" d="M 1140 256 L 1170 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
 
         <!-- Components -->
         <g id="node-cliente" data-node-id="cliente" data-node-label="Cliente Web" tabindex="0" role="button" aria-label="Focus Cliente Web, execute(), Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="execute()" data-node-tag="otro repo" data-node-context="Architecture component">
@@ -5188,20 +5189,20 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="100" y="284" class="t-frontend" font-size="7" text-anchor="middle">otro repo</text>
         </g>
 
-        <g id="node-app" data-node-id="app" data-node-label="Rutas /api" tabindex="0" role="button" aria-label="Focus Rutas /api, routes.js · POST /execute, Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="routes.js · POST /execute" data-node-tag="Express 5" data-node-context="Backend monolítico · Node.js">
-          <title>Rutas /api · routes.js · POST /execute · Backend monolítico · Node.js · Express 5</title>
+        <g id="node-app" data-node-id="app" data-node-label="Rutas /api" tabindex="0" role="button" aria-label="Focus Rutas /api, routes.js, Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="routes.js" data-node-tag="POST /execute · /refresh" data-node-context="Backend monolítico · Node.js">
+          <title>Rutas /api · routes.js · Backend monolítico · Node.js · POST /execute · /refresh</title>
           <rect x="240" y="220" width="150" height="72" rx="6" class="c-mask"/>
           <rect x="240" y="220" width="150" height="72" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(246 226) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="315" y="254" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Rutas /api</text>
-        <text data-detail="context" x="315" y="270" class="t-muted" font-size="9" text-anchor="middle">routes.js · POST /execute</text>
-        <text data-detail="fine" x="315" y="284" class="t-backend" font-size="7" text-anchor="middle">Express 5</text>
+        <text data-detail="context" x="315" y="270" class="t-muted" font-size="9" text-anchor="middle">routes.js</text>
+        <text data-detail="fine" x="315" y="284" class="t-backend" font-size="7" text-anchor="middle">POST /execute · /refresh</text>
         </g>
 
-        <g id="node-security" data-node-id="security" data-node-label="Security" tabindex="0" role="button" aria-label="Focus Security, executeMethod(), Backend monolítico · Node.js › Esquema de seguridad" aria-pressed="false" data-node-kind="security" data-node-sublabel="executeMethod()" data-node-tag="forma→permiso→reflexión" data-node-context="Backend monolítico · Node.js › Esquema de seguridad">
-          <title>Security · executeMethod() · Backend monolítico · Node.js › Esquema de seguridad · forma→permiso→reflexión</title>
+        <g id="node-security" data-node-id="security" data-node-label="Security" tabindex="0" role="button" aria-label="Focus Security, executeMethod(), Backend monolítico · Node.js › Esquema de seguridad" aria-pressed="false" data-node-kind="security" data-node-sublabel="executeMethod()" data-node-tag="forma→sesión→permiso→reflexión" data-node-context="Backend monolítico · Node.js › Esquema de seguridad">
+          <title>Security · executeMethod() · Backend monolítico · Node.js › Esquema de seguridad · forma→sesión→permiso→reflexión</title>
           <rect x="470" y="220" width="160" height="72" rx="6" class="c-mask"/>
           <rect x="470" y="220" width="160" height="72" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(476 226) scale(0.6875)">
@@ -5210,11 +5211,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           </g>
           <text data-node-label="" data-detail-anchor="" x="550" y="254" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Security</text>
         <text data-detail="context" x="550" y="270" class="t-muted" font-size="9" text-anchor="middle">executeMethod()</text>
-        <text data-detail="fine" x="550" y="284" class="t-security" font-size="7" text-anchor="middle">forma→permiso→reflexión</text>
+        <text data-detail="fine" x="550" y="284" class="t-security" font-size="7" text-anchor="middle">forma→sesión→permiso→reflexión</text>
         </g>
 
-        <g id="node-bo" data-node-id="bo" data-node-label="Objetos de negocio" tabindex="0" role="button" aria-label="Focus Objetos de negocio, src/bo/Session · Security, Backend monolítico · Node.js › Esquema de seguridad" aria-pressed="false" data-node-kind="backend" data-node-sublabel="src/bo/Session · Security" data-node-tag="Session │ Menu · Admin · User" data-node-context="Backend monolítico · Node.js › Esquema de seguridad">
-          <title>Objetos de negocio · src/bo/Session · Security · Backend monolítico · Node.js › Esquema de seguridad · Session │ Menu · Admin · User</title>
+        <g id="node-bo" data-node-id="bo" data-node-label="Objetos de negocio" tabindex="0" role="button" aria-label="Focus Objetos de negocio, src/bo/Session · Security, Backend monolítico · Node.js › Esquema de seguridad" aria-pressed="false" data-node-kind="backend" data-node-sublabel="src/bo/Session · Security" data-node-tag="Session · Token │ Menu·Admin·User" data-node-context="Backend monolítico · Node.js › Esquema de seguridad">
+          <title>Objetos de negocio · src/bo/Session · Security · Backend monolítico · Node.js › Esquema de seguridad · Session · Token │ Menu·Admin·User</title>
           <rect x="710" y="220" width="180" height="72" rx="6" class="c-mask"/>
           <rect x="710" y="220" width="180" height="72" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(716 226) scale(0.6875)">
@@ -5222,11 +5223,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           </g>
           <text data-node-label="" data-detail-anchor="" x="800" y="254" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Objetos de negocio</text>
         <text data-detail="context" x="800" y="270" class="t-muted" font-size="9" text-anchor="middle">src/bo/Session · Security</text>
-        <text data-detail="fine" x="800" y="284" class="t-backend" font-size="7" text-anchor="middle">Session │ Menu · Admin · User</text>
+        <text data-detail="fine" x="800" y="284" class="t-backend" font-size="7" text-anchor="middle">Session · Token │ Menu·Admin·User</text>
         </g>
 
-        <g id="node-services" data-node-id="services" data-node-label="Servicios" tabindex="0" role="button" aria-label="Focus Servicios, src/services, Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="src/services" data-node-tag="Password · Permisos" data-node-context="Backend monolítico · Node.js">
-          <title>Servicios · src/services · Backend monolítico · Node.js · Password · Permisos</title>
+        <g id="node-services" data-node-id="services" data-node-label="Servicios" tabindex="0" role="button" aria-label="Focus Servicios, src/services, Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="src/services" data-node-tag="Password · Permisos · Token" data-node-context="Backend monolítico · Node.js">
+          <title>Servicios · src/services · Backend monolítico · Node.js · Password · Permisos · Token</title>
           <rect x="710" y="360" width="180" height="68" rx="6" class="c-mask"/>
           <rect x="710" y="360" width="180" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(716 366) scale(0.6875)">
@@ -5234,7 +5235,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           </g>
           <text data-node-label="" data-detail-anchor="" x="800" y="392" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Servicios</text>
         <text data-detail="context" x="800" y="408" class="t-muted" font-size="9" text-anchor="middle">src/services</text>
-        <text data-detail="fine" x="800" y="420" class="t-backend" font-size="7" text-anchor="middle">Password · Permisos</text>
+        <text data-detail="fine" x="800" y="420" class="t-backend" font-size="7" text-anchor="middle">Password · Permisos · Token</text>
         </g>
 
         <g id="node-db" data-node-id="db" data-node-label="Componente de datos" tabindex="0" role="button" aria-label="Focus Componente de datos, query() · transaction(), Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="query() · transaction()" data-node-tag="Database.js" data-node-context="Backend monolítico · Node.js">
@@ -5267,16 +5268,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="1255" y="284" class="t-database" font-size="7" text-anchor="middle">sslmode=require</text>
         </g>
 
-        <g id="node-sesion" data-node-id="sesion" data-node-label="Sesión + CORS" tabindex="0" role="button" aria-label="Focus Sesión + CORS, cookie connect.sid, Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="cookie connect.sid" data-node-tag="express-session" data-node-context="Backend monolítico · Node.js">
-          <title>Sesión + CORS · cookie connect.sid · Backend monolítico · Node.js · express-session</title>
+        <g id="node-sesion" data-node-id="sesion" data-node-label="Sesión + CORS" tabindex="0" role="button" aria-label="Focus Sesión + CORS, connect.sid · access_token, Backend monolítico · Node.js" aria-pressed="false" data-node-kind="backend" data-node-sublabel="connect.sid · access_token" data-node-tag="express-session + JWT" data-node-context="Backend monolítico · Node.js">
+          <title>Sesión + CORS · connect.sid · access_token · Backend monolítico · Node.js · express-session + JWT</title>
           <rect x="240" y="60" width="150" height="68" rx="6" class="c-mask"/>
           <rect x="240" y="60" width="150" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(246 66) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="315" y="92" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Sesión + CORS</text>
-        <text data-detail="context" x="315" y="108" class="t-muted" font-size="9" text-anchor="middle">cookie connect.sid</text>
-        <text data-detail="fine" x="315" y="120" class="t-backend" font-size="7" text-anchor="middle">express-session</text>
+        <text data-detail="context" x="315" y="108" class="t-muted" font-size="9" text-anchor="middle">connect.sid · access_token</text>
+        <text data-detail="fine" x="315" y="120" class="t-backend" font-size="7" text-anchor="middle">express-session + JWT</text>
         </g>
 
         <g id="node-permisos" data-node-id="permisos" data-node-label="Mapas en memoria" tabindex="0" role="button" aria-label="Focus Mapas en memoria, PermissionMethodMap, Backend monolítico · Node.js › Esquema de seguridad" aria-pressed="false" data-node-kind="security" data-node-sublabel="PermissionMethodMap" data-node-tag="O(1) por perfil" data-node-context="Backend monolítico · Node.js › Esquema de seguridad">
@@ -5309,39 +5310,43 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <rect x="154.2" y="292" width="91.6" height="14" rx="3" class="c-mask"/>
           <text x="200" y="302" class="t-backend" font-size="8" text-anchor="middle">POST /api/execute</text>
         </g>
-        <g data-detail="context" data-edge-from="app" data-edge-to="sesion" data-edge-label="req.session" data-edge-key="1" data-edge-id="app-sesion">
-          <rect x="283.6" y="200" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="315" y="210" class="t-muted" font-size="8" text-anchor="middle">req.session</text>
+        <g data-detail="context" data-edge-from="cliente" data-edge-to="app" data-edge-label="POST /api/refresh" data-edge-key="1" data-edge-id="cliente-refresh">
+          <rect x="194.2" y="308" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="240" y="318" class="t-muted" font-size="8" text-anchor="middle">POST /api/refresh</text>
         </g>
-        <g data-detail="context" data-edge-from="app" data-edge-to="security" data-edge-label="executeMethod" data-edge-key="2" data-edge-id="app-security">
+        <g data-detail="context" data-edge-from="app" data-edge-to="sesion" data-edge-label="req.session · access_token" data-edge-key="2" data-edge-id="app-sesion">
+          <rect x="247.6" y="200" width="134.8" height="14" rx="3" class="c-mask"/>
+          <text x="315" y="210" class="t-muted" font-size="8" text-anchor="middle">req.session · access_token</text>
+        </g>
+        <g data-detail="context" data-edge-from="app" data-edge-to="security" data-edge-label="executeMethod" data-edge-key="3" data-edge-id="app-security">
           <rect x="393.8" y="292" width="72.4" height="14" rx="3" class="c-mask"/>
           <text x="430" y="302" class="t-backend" font-size="8" text-anchor="middle">executeMethod</text>
         </g>
-        <g data-detail="context" data-edge-from="security" data-edge-to="permisos" data-edge-label="resuelve permiso" data-edge-key="3" data-edge-id="security-permisos">
+        <g data-detail="context" data-edge-from="security" data-edge-to="permisos" data-edge-label="resuelve permiso" data-edge-key="4" data-edge-id="security-permisos">
           <rect x="506.6" y="200" width="86.8" height="14" rx="3" class="c-mask"/>
           <text x="550" y="210" class="t-security" font-size="8" text-anchor="middle">resuelve permiso</text>
         </g>
-        <g data-detail="context" data-edge-from="security" data-edge-to="bo" data-edge-label="reflexión" data-edge-key="4" data-edge-id="security-bo">
+        <g data-detail="context" data-edge-from="security" data-edge-to="bo" data-edge-label="reflexión" data-edge-key="5" data-edge-id="security-bo">
           <rect x="643.4" y="292" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
           <text x="670" y="302" class="t-security" font-size="8" text-anchor="middle">reflexión</text>
         </g>
-        <g data-detail="context" data-edge-from="bo" data-edge-to="db" data-edge-label="solo los BO tocan la BD" data-edge-key="5" data-edge-id="bo-db">
+        <g data-detail="context" data-edge-from="bo" data-edge-to="db" data-edge-label="solo los BO tocan la BD" data-edge-key="6" data-edge-id="bo-db">
           <rect x="869.8" y="292" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
           <text x="930" y="302" class="t-muted" font-size="8" text-anchor="middle">solo los BO tocan la BD</text>
         </g>
-        <g data-detail="context" data-edge-from="bo" data-edge-to="services" data-edge-label="lógica reutilizable" data-edge-key="6" data-edge-id="bo-services">
+        <g data-detail="context" data-edge-from="bo" data-edge-to="services" data-edge-label="lógica reutilizable" data-edge-key="7" data-edge-id="bo-services">
           <rect x="749.4" y="296" width="101.2" height="14" rx="3" class="c-mask"/>
           <text x="800" y="306" class="t-messagebus" font-size="8" text-anchor="middle">lógica reutilizable</text>
         </g>
-        <g data-detail="context" data-edge-from="security" data-edge-to="services" data-edge-label="arma llaves" data-edge-key="7" data-edge-id="security-services">
+        <g data-detail="context" data-edge-from="security" data-edge-to="services" data-edge-label="arma llaves" data-edge-key="8" data-edge-id="security-services">
           <rect x="586.6" y="296" width="62.8" height="14" rx="3" class="c-mask"/>
           <text x="618" y="306" class="t-messagebus" font-size="8" text-anchor="middle">arma llaves</text>
         </g>
-        <g data-detail="context" data-edge-from="db" data-edge-to="queries" data-edge-label="carga al arrancar" data-edge-key="8" data-edge-id="db-queries">
+        <g data-detail="context" data-edge-from="db" data-edge-to="queries" data-edge-label="carga al arrancar" data-edge-key="9" data-edge-id="db-queries">
           <rect x="1009.2" y="200" width="91.6" height="14" rx="3" class="c-mask"/>
           <text x="1055" y="210" class="t-messagebus" font-size="8" text-anchor="middle">carga al arrancar</text>
         </g>
-        <g data-detail="context" data-edge-from="db" data-edge-to="neon" data-edge-label="SQL parametrizado" data-edge-key="9" data-edge-id="db-neon">
+        <g data-detail="context" data-edge-from="db" data-edge-to="neon" data-edge-label="SQL parametrizado" data-edge-key="10" data-edge-id="db-neon">
           <rect x="1109.2" y="292" width="91.6" height="14" rx="3" class="c-mask"/>
           <text x="1155" y="302" class="t-muted" font-size="8" text-anchor="middle">SQL parametrizado</text>
         </g>
@@ -5581,9 +5586,9 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <h3>Seguridad</h3>
         </div>
         <ul>
-          <li>&bull; Orden fijo: forma → permiso → reflexión → ejecución</li>
+          <li>&bull; Orden fijo: forma → sesión → permiso → reflexión</li>
           <li>&bull; Permisos en mapas en memoria</li>
-          <li>&bull; Llave: Subsistema_Clase_metodo_perfilId</li>
+          <li>&bull; Guard del access token: hidrata la sesión si no hay cookie</li>
         </ul>
       </div>
 
@@ -5606,8 +5611,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </div>
         <ul>
           <li>&bull; Lógica reutilizable sin BD ni sesión</li>
-          <li>&bull; PasswordService y PermissionKeyService</li>
-          <li>&bull; Los BO y Security orquestan; el servicio no conoce Express</li>
+          <li>&bull; PasswordService, PermissionKeyService y TokenService</li>
+          <li>&bull; Access JWT en cookie; refresh rotativo por familia</li>
         </ul>
       </div>
     </div>
