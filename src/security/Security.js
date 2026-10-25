@@ -54,8 +54,6 @@ class Security {
 
   BoMap = new Map();
 
-  PublicProfileId = null;
-
   constructor(conexion, { boDir = BO_DIR_POR_DEFECTO } = {}) {
     this.db = conexion;
     this.boDir = boDir;
@@ -113,10 +111,9 @@ class Security {
   loadPermission = async () => {
     this.refreshBo();
 
-    const [metodos, opciones, publico] = await Promise.all([
+    const [metodos, opciones] = await Promise.all([
       this.db.query(queries.loadPermissionMethods),
       this.db.query(queries.loadPermissionOptions),
-      this.db.query(queries.findPublicProfileId),
     ]);
 
     const mapasMetodos = new Map();
@@ -260,6 +257,12 @@ class Security {
     const perfiles = Array.isArray(req?.session?.profiles) ? req.session.profiles : [];
     const perfilesEfectivos = perfiles;
 
+    const esMetodoSesionAnonimo =
+      subsystem === "Session" &&
+      clase === "Session" &&
+      (method === "login" || method === "logout" || method === "sessionExist" || method === "getSession") &&
+      !req?.session?.userID;
+
     const esGetOptionsAnonimo =
       subsystem === "Security" &&
       clase === "Menu" &&
@@ -267,6 +270,7 @@ class Security {
       !req?.session?.userID;
 
     const autorizado =
+      esMetodoSesionAnonimo ||
       esGetOptionsAnonimo ||
       perfilesEfectivos.some((perfilId) =>
         this.getPermissionMethod(llaveMetodo(subsystem, clase, method, perfilId)),
