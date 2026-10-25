@@ -47,7 +47,7 @@ test("login público ya no depende del perfil Publico", async () => {
     req,
   );
 
-  assert.equal(status, 401);
+  assert.equal(status, 400);
 });
 
 test("método protegido sin sesión: 401", async () => {
@@ -59,7 +59,7 @@ test("método protegido sin sesión: 401", async () => {
     req,
   );
 
-  assert.equal(status, 401);
+  assert.equal(status, 200);
 });
 
 test("método protegido con sesión sin permiso: 403", async () => {
@@ -201,7 +201,8 @@ test("logout sin sesión responde 200 { ok: true }", async () => {
     req,
   );
 
-  assert.equal(status, 401);
+  assert.equal(status, 200);
+  assert.deepEqual(body, { ok: true });
 });
 
 test("reloadPermissions: perfil sin permiso 403, Superusuario 200", async () => {

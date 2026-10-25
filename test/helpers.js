@@ -82,13 +82,17 @@ function crearDbFalso({
       llamadas.push({ texto, params });
 
       if (texto === queries.loadPermissionMethods) {
-        return { rows: [] };
+        return {
+          rows: [
+            { subsistema: "Session", clase: "Session", metodo: "login", perfil_id: 1 },
+            { subsistema: "Session", clase: "Session", metodo: "logout", perfil_id: 2 },
+            { subsistema: "Session", clase: "Session", metodo: "logout", perfil_id: 9 },
+            { subsistema: "Security", clase: "Admin", metodo: "reloadPermissions", perfil_id: 2 },
+          ],
+        };
       }
       if (texto === queries.loadPermissionOptions) {
         return { rows: opciones };
-      }
-      if (texto === queries.findPublicProfileId) {
-        return { rows: publicoId == null ? [] : [{ id: publicoId }] };
       }
       if (texto === queries.findUserByUsername || (typeof texto === "string" && texto.includes("FROM usuario u") && texto.includes("JOIN persona p") && texto.includes("WHERE u.username"))) {
         // Refleja el estado mutable: una prueba puede vencer un bloqueo y
