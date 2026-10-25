@@ -1,4 +1,4 @@
-import { queries } from "../../queries/loader.js";
+import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { passwordService } from "../../services/PasswordService.js";
 

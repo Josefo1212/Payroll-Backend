@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { queries } from "../../queries/loader.js";
+import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { tokenService } from "../../services/TokenService.js";
 
@@ -42,7 +42,7 @@ export class Token {
       throw new ErrorNegocio(MENSAJE, 401);
     }
 
-    const { rows: perfiles } = await this.#db.query(queries.findProfilesByUserId, [
+    const { rows: perfiles } = await this.#db.query(sessionQueries.findProfilesByUserId, [
       fila.usuario_id,
     ]);
     if (perfiles.length === 0) {

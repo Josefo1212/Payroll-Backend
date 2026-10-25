@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import session from "express-session";
 import bcrypt from "bcrypt";
 import { db } from "../src/database/Database.js";
-import { queries } from "../src/queries/loader.js";
+import { queries } from "../src/bo/Security/loader.js";
 import { Security, security } from "../src/security/Security.js";
 import { Session } from "../src/bo/Session/Session.js";
 
@@ -90,7 +90,7 @@ function crearDbFalso({
       if (texto === queries.findPublicProfileId) {
         return { rows: publicoId == null ? [] : [{ id: publicoId }] };
       }
-      if (texto === queries.findUserByUsername) {
+      if (texto === queries.findUserByUsername || (typeof texto === "string" && texto.includes("FROM usuario u") && texto.includes("JOIN persona p") && texto.includes("WHERE u.username"))) {
         // Refleja el estado mutable: una prueba puede vencer un bloqueo y
         // volver a intentar sin recrear la base falsa.
         return {
@@ -103,7 +103,7 @@ function crearDbFalso({
             : [],
         };
       }
-      if (texto === queries.findProfilesByUserId) {
+      if (texto === queries.findProfilesByUserId || (typeof texto === "string" && texto.includes("FROM usuario_perfil up") && texto.includes("JOIN perfil pf") && texto.includes("WHERE up.usuario_id"))) {
         return {
           rows: perfiles.map((perfil_id) => ({
             perfil_id,
@@ -127,7 +127,7 @@ function crearDbFalso({
           ],
         };
       }
-      if (texto === queries.registerFailedAttempt) {
+      if (texto === queries.registerFailedAttempt || (typeof texto === "string" && texto.includes("UPDATE usuario") && texto.includes("intentos_fallidos") && texto.includes("make_interval"))) {
         estado.intentos += 1;
         if (estado.intentos >= params[2]) {
           // Igual que el SQL: al bloquear, el contador vuelve a 0.
@@ -138,46 +138,47 @@ function crearDbFalso({
           rows: [{ intentos_fallidos: estado.intentos, bloqueado_hasta: estado.bloqueadoHasta }],
         };
       }
-      if (texto === queries.resetAttemptsAndAccess) {
+      if (texto === queries.resetAttemptsAndAccess || (typeof texto === "string" && texto.includes("ultimo_acceso") && texto.includes("UPDATE usuario"))) {
         estado.intentos = 0;
         estado.bloqueadoHasta = null;
         return { rows: [{ id: params[0] }] };
       }
-      if (texto === queries.existePersona) {
+      if (texto === queries.existePersona || (typeof texto === "string" && texto.includes("EXISTS (SELECT 1 FROM persona WHERE cedula"))) {
         return { rows: [{ cedula: false, email: false }] };
       }
-      if (texto === queries.existeUsuario) {
+      if (texto === queries.existeUsuario || (typeof texto === "string" && texto.includes("EXISTS (SELECT 1 FROM usuario WHERE username"))) {
         return { rows: [{ username: false }] };
       }
-      if (texto === queries.findActiveProfilesByIds) {
+      if (texto === queries.findActiveProfilesByIds || (typeof texto === "string" && texto.includes("FROM perfil") && texto.includes("ANY($1::int[])"))) {
         const ids = perfilesActivos ?? params[0];
         return { rows: ids.map((id) => ({ id })) };
       }
-      if (texto === queries.insertPersona) {
+      if (texto === queries.insertPersona || (typeof texto === "string" && texto.includes("INSERT INTO persona"))) {
         return { rows: [{ id: 100 }] };
       }
-      if (texto === queries.insertUsuario) {
+      if (texto === queries.insertUsuario || (typeof texto === "string" && texto.includes("INSERT INTO usuario (persona_id, username"))) {
         return { rows: [{ id: 200, username: params[1], persona_id: params[0] }] };
       }
-      if (texto === queries.insertUsuarioPerfil) {
+      if (texto === queries.insertUsuarioPerfil || (typeof texto === "string" && texto.includes("INSERT INTO usuario_perfil"))) {
+        llamadas.push({ texto, params, tipo: 'insertUsuarioPerfil' });
         return { rows: [] };
       }
-      if (texto === queries.findPasswordHashById) {
+      if (texto === queries.findPasswordHashById || texto.includes("SELECT password_hash") && texto.includes("FROM usuario")) {
         return { rows: [{ password_hash: usuario?.password_hash ?? HASH_CLAVE }] };
       }
-      if (texto === queries.updatePassword) {
+      if (texto === queries.updatePassword || texto.includes("UPDATE usuario") && texto.includes("SET password_hash")) {
         return { rows: [{ id: params[1] }] };
       }
-      if (texto === queries.insertRefreshToken) {
+      if (texto === queries.insertRefreshToken || (typeof texto === "string" && texto.includes("INSERT INTO refresh_token"))) {
         return { rows: [{ id: params[1] ?? "22222222-2222-4222-8222-222222222222" }] };
       }
-      if (texto === queries.findRefreshTokenByHash) {
+      if (texto === queries.findRefreshTokenByHash || (typeof texto === "string" && texto.includes("FROM refresh_token WHERE token_hash"))) {
         return { rows: refresco ? [refresco] : [] };
       }
-      if (texto === queries.revokeRefreshToken) {
+      if (texto === queries.revokeRefreshToken || (typeof texto === "string" && texto.includes("reemplazado_por"))) {
         return { rows: [{ id: params[0] }] };
       }
-      if (texto === queries.revokeFamily || texto === queries.revokeAllUserTokens) {
+      if (texto === queries.revokeFamily || texto === queries.revokeAllUserTokens || (typeof texto === "string" && texto.includes("UPDATE refresh_token") && texto.includes("revocado_en = NOW()"))) {
         return { rows: [] };
       }
 

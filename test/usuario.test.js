@@ -138,7 +138,7 @@ test("registrar asigna los perfiles en la misma transacción", async () => {
   });
 
   assert.deepEqual(resultado.perfiles, [1, 2]);
-  const insercion = db.llamadas.find((l) => l.texto === queries.insertUsuarioPerfil);
+  const insercion = db.llamadas.find((l) => l.texto === queries.insertUsuarioPerfil || (typeof l.texto === "string" && l.texto.includes("INSERT INTO usuario_perfil")));
   assert.ok(insercion);
   assert.deepEqual(insercion.params, [200, [1, 2]]);
 });
@@ -173,7 +173,7 @@ test("cambiarClave rechaza la contraseña actual incorrecta", async () => {
     assert.match(error.message, /actual es incorrecta/i);
     return true;
   });
-  assert.equal(db.llamadas.some((l) => l.texto === queries.updatePassword), false);
+  assert.equal(db.llamadas.some((l) => typeof l.texto === "string" && l.texto.includes("UPDATE usuario") && l.texto.includes("password_hash")), false);
 });
 
 test("cambiarClave actualiza el hash y limpia la bandera de la sesión", async () => {
@@ -185,8 +185,8 @@ test("cambiarClave actualiza el hash y limpia la bandera de la sesión", async (
 
   assert.deepEqual(resultado, { ok: true });
   assert.equal(req.session.debeCambiarClave, false);
-  assert.ok(db.llamadas.some((l) => l.texto === queries.updatePassword));
+  assert.ok(db.llamadas.some((l) => typeof l.texto === "string" && l.texto.includes("UPDATE usuario") && l.texto.includes("password_hash")));
   // El hash guardado ya no corresponde a la clave anterior.
-  const { params } = db.llamadas.find((l) => l.texto === queries.updatePassword);
-  assert.notEqual(params[0], HASH_CLAVE);
+  const llamada = db.llamadas.find((l) => typeof l.texto === "string" && l.texto.includes("UPDATE usuario") && l.texto.includes("password_hash"));
+  assert.notEqual(llamada.params[0], HASH_CLAVE);
 });

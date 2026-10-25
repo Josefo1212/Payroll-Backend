@@ -1,0 +1,69 @@
+# Consultas del subsistema Session
+findUserByUsername: |
+  SELECT u.id, u.username, u.password_hash, u.persona_id,
+         concat_ws(' ', p.primer_nombre, p.primer_apellido) AS nombre,
+         u.activo, u.intentos_fallidos, u.bloqueado_hasta,
+         u.debe_cambiar_clave
+  FROM usuario u
+  JOIN persona p ON p.id = u.persona_id
+  WHERE u.username = $1
+
+findProfilesByUserId: |
+  SELECT up.perfil_id, pf.nombre_perfil
+  FROM usuario_perfil up
+  JOIN perfil pf ON pf.id = up.perfil_id
+  WHERE up.usuario_id = $1 AND pf.activo
+  ORDER BY up.perfil_id
+
+registerFailedAttempt: |
+  UPDATE usuario
+     SET bloqueado_hasta = CASE
+             WHEN intentos_fallidos + 1 >= $3 THEN NOW() + make_interval(mins => $2)
+             ELSE bloqueado_hasta
+         END,
+         intentos_fallidos = CASE
+             WHEN intentos_fallidos + 1 >= $3 THEN 0
+             ELSE intentos_fallidos + 1
+         END,
+         updated_at = NOW()
+   WHERE id = $1
+  RETURNING intentos_fallidos, bloqueado_hasta
+
+resetAttemptsAndAccess: |
+  UPDATE usuario
+     SET intentos_fallidos = 0,
+         bloqueado_hasta = NULL,
+         ultimo_acceso = NOW(),
+         updated_at = NOW()
+   WHERE id = $1
+  RETURNING id
+
+revokeAllUserTokens: |
+  UPDATE refresh_token
+     SET revocado_en = NOW()
+   WHERE usuario_id = $1
+     AND revocado_en IS NULL
+
+findRefreshTokenByHash: |
+  SELECT id, usuario_id, familia_id, expira_en, revocado_en, reemplazado_por
+  FROM refresh_token
+  WHERE token_hash = $1
+
+revokeFamily: |
+  UPDATE refresh_token
+     SET revocado_en = NOW()
+   WHERE familia_id = $1
+     AND revocado_en IS NULL
+
+insertRefreshToken: |
+  INSERT INTO refresh_token (usuario_id, familia_id, token_hash, expira_en, ip, user_agent)
+  VALUES ($1, $2, $3, $4, $5, $6)
+  RETURNING id
+
+revokeRefreshToken: |
+  UPDATE refresh_token
+     SET revocado_en = NOW(),
+         reemplazado_por = $2
+   WHERE id = $1
+     AND revocado_en IS NULL
+  RETURNING id

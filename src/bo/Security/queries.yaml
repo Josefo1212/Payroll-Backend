@@ -1,0 +1,93 @@
+# Consultas del subsistema Security
+loadPermissionMethods: |
+  SELECT s.nombre AS subsistema,
+         c.nombre AS clase,
+         m.nombre AS metodo,
+         pm.perfil_id
+  FROM permiso_metodo pm
+  JOIN metodo m ON m.id = pm.metodo_id
+  JOIN clase c ON c.id = m.clase_id
+  JOIN subsistema s ON s.id = c.subsistema_id
+  JOIN perfil pf ON pf.id = pm.perfil_id
+  WHERE m.activo AND c.activo AND s.activo AND pf.activo
+
+loadPermissionOptions: |
+  SELECT s.nombre AS subsistema,
+         o.id AS opcion_id,
+         o.nombre AS opcion,
+         o.orden,
+         o.descripcion,
+         po.perfil_id
+  FROM permiso_opcion po
+  JOIN opcion o ON o.id = po.opcion_id
+  JOIN subsistema s ON s.id = o.subsistema_id
+  JOIN perfil pf ON pf.id = po.perfil_id
+  WHERE o.activo AND s.activo AND pf.activo
+
+findPublicProfileId: |
+  SELECT id
+  FROM perfil
+  WHERE nombre_perfil = 'Publico' AND activo
+
+findSessionState: |
+  SELECT u.activo, u.debe_cambiar_clave,
+         COALESCE(
+           array_agg(up.perfil_id ORDER BY up.perfil_id)
+             FILTER (WHERE pf.activo),
+           '{}'::int[]
+         ) AS perfiles,
+         COALESCE(
+           jsonb_agg(
+             jsonb_build_object('id', up.perfil_id, 'nombre', pf.nombre_perfil)
+             ORDER BY up.perfil_id
+           ) FILTER (WHERE pf.activo),
+           '[]'::jsonb
+         ) AS perfiles_detalle
+  FROM usuario u
+  LEFT JOIN usuario_perfil up ON up.usuario_id = u.id
+  LEFT JOIN perfil pf ON pf.id = up.perfil_id
+  WHERE u.id = $1
+  GROUP BY u.id, u.activo, u.debe_cambiar_clave
+
+existePersona: |
+  SELECT EXISTS (SELECT 1 FROM persona WHERE cedula = $1) AS cedula,
+         EXISTS (SELECT 1 FROM persona WHERE email = $2) AS email
+
+existeUsuario: |
+  SELECT EXISTS (SELECT 1 FROM usuario WHERE username = $1) AS username
+
+findActiveProfilesByIds: |
+  SELECT id
+  FROM perfil
+  WHERE id = ANY($1::int[]) AND activo
+  ORDER BY id
+
+insertPersona: |
+  INSERT INTO persona
+    (cedula, primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
+     fecha_nacimiento, sexo, estado_civil, nro_tlf, email, direccion, rif)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+  RETURNING id
+
+insertUsuario: |
+  INSERT INTO usuario (persona_id, username, password_hash)
+  VALUES ($1, $2, $3)
+  RETURNING id, username, persona_id
+
+insertUsuarioPerfil: |
+  INSERT INTO usuario_perfil (usuario_id, perfil_id)
+  SELECT $1, unnest($2::int[])
+  ON CONFLICT DO NOTHING
+
+findPasswordHashById: |
+  SELECT password_hash
+  FROM usuario
+  WHERE id = $1
+
+updatePassword: |
+  UPDATE usuario
+     SET password_hash = $1,
+         debe_cambiar_clave = false,
+         updated_at = NOW()
+   WHERE id = $2
+  RETURNING id

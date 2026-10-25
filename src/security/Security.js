@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { db } from "../database/Database.js";
-import { queries } from "../queries/loader.js";
+import { queries } from "../bo/Security/loader.js";
 import { ErrorNegocio } from "../errors/ErrorNegocio.js";
 import {
   llaveMetodo,

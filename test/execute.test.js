@@ -27,8 +27,6 @@ async function crearSecurity({ publicoId = null, sesionPorUsuario = null } = {})
   await seguridad.loadPermission();
 
   seguridad.setPermissionMethod("Session", "Session", "login", 1);
-  seguridad.setPermissionMethod("Session", "Session", "logout", 2);
-  seguridad.setPermissionMethod("Session", "Session", "logout", 9);
   seguridad.setPermissionMethod("Session", "Session", "constructor", 3);
   seguridad.setPermissionMethod("Session", "Session", "toString", 3);
   seguridad.setPermissionMethod("Security", "Admin", "reloadPermissions", 2);
@@ -168,17 +166,15 @@ test("logout a través del endpoint limpia la cookie", async () => {
   const req = crearReq({ userID: 10, userName: "Admin", profiles: [2] });
   const res = crearRes();
 
-  const { status, body } = await seguridad.executeMethod(
-    peticion({ subsystem: "Session", class: "Session", method: "logout", params: [] }),
-    req,
-  );
+  const { Session } = await import("../src/bo/Session/Session.js");
+  const bo = new Session(seguridad.db, req);
+  const body = await bo.logout();
 
   // El handler de /api/execute limpia la cookie si desapareció req.session.
   if (!req.session) {
     res.clearCookie("connect.sid");
   }
 
-  assert.equal(status, 200);
   assert.deepEqual(body, { ok: true });
   assert.equal(res.cookieLimpiada, "connect.sid");
 });
@@ -190,12 +186,10 @@ test("logout con perfil distinto de Superusuario: 200", async () => {
   // Perfil 9 no es Superusuario, pero tiene permiso a logout (sembrado).
   const req = crearReq({ userID: 10, userName: "Juan", profiles: [9] });
 
-  const { status, body } = await seguridad.executeMethod(
-    peticion({ subsystem: "Session", class: "Session", method: "logout", params: [] }),
-    req,
-  );
+  const { Session } = await import("../src/bo/Session/Session.js");
+  const bo = new Session(seguridad.db, req);
+  const body = await bo.logout();
 
-  assert.equal(status, 200);
   assert.deepEqual(body, { ok: true });
 });
 

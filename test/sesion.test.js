@@ -40,7 +40,7 @@ test("login ok: crea la sesión sin exponer el hash", async () => {
   assert.deepEqual(req.session.profiles, [2, 3]);
   assert.equal(req.session.password_hash, undefined);
   // Resetea intentos y último acceso.
-  assert.ok(dbFalso.llamadas.some((l) => l.texto === queries.resetAttemptsAndAccess));
+  assert.ok(dbFalso.llamadas.some((l) => l.texto === queries.resetAttemptsAndAccess || (typeof l.texto === "string" && l.texto.includes("UPDATE usuario") && l.texto.includes("intentos_fallidos") && l.texto.includes("ultimo_acceso"))));
 });
 
 test("login propaga debeCambiarClave a la sesión", async () => {
@@ -64,7 +64,7 @@ test("contraseña incorrecta: 401 y registra intento fallido", async () => {
     assert.equal(error.message, "Usuario o contraseña incorrectos");
     return true;
   });
-  assert.ok(dbFalso.llamadas.some((l) => l.texto === queries.registerFailedAttempt));
+  assert.ok(dbFalso.llamadas.some((l) => l.texto === queries.registerFailedAttempt || (typeof l.texto === "string" && l.texto.includes("intentos_fallidos") && l.texto.includes("make_interval"))));
 });
 
 test("usuario inexistente: mismo mensaje que contraseña incorrecta", async () => {
@@ -231,7 +231,7 @@ test("un error de BD en login no se atrapa: se propaga", async () => {
   const { bo, dbFalso } = await crearBo();
   const original = dbFalso.query;
   dbFalso.query = async (texto, params) => {
-    if (texto === queries.findUserByUsername) {
+    if (texto === queries.findUserByUsername || (typeof texto === "string" && texto.includes("FROM usuario u") && texto.includes("WHERE u.username"))) {
       throw new Error("BD caída");
     }
     return original(texto, params);
