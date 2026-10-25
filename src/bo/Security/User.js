@@ -24,7 +24,6 @@ export class User {
       nro_tlf,
       email,
       direccion,
-      rif,
       username,
       password,
       perfil_id,
@@ -123,7 +122,6 @@ export class User {
           nro_tlf ?? null,
           email ?? null,
           direccion ?? null,
-          rif ?? null,
         ]);
 
         const usuario = await cliente.query(queries.insertUsuario, [
