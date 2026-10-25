@@ -9,11 +9,6 @@ const startServer = async () => {
   try {
     await security.loadPermission();
 
-    if (security.PublicProfileId == null) {
-      throw new Error(
-        "No existe el perfil 'Publico'. Aplicá db/seed-seguridad.sql antes de arrancar.",
-      );
-    }
   } catch (error) {
     console.error(
       "Fallo al cargar permisos. El servidor no arranca:",

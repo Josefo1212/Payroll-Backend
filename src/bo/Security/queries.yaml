@@ -24,11 +24,6 @@ loadPermissionOptions: |
   JOIN perfil pf ON pf.id = po.perfil_id
   WHERE o.activo AND s.activo AND pf.activo
 
-findPublicProfileId: |
-  SELECT id
-  FROM perfil
-  WHERE nombre_perfil = 'Publico' AND activo
-
 findSessionState: |
   SELECT u.activo, u.debe_cambiar_clave,
          COALESCE(

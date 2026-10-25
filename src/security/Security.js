@@ -141,11 +141,9 @@ class Security {
 
     this.PermissionMethodMap = mapasMetodos;
     this.PermissionOptionMap = mapasOpciones;
-    this.PublicProfileId = publico.rows[0]?.id ?? null;
 
     console.log(
-      `Permisos cargados: ${mapasMetodos.size} método(s) y ${mapasOpciones.size} opción(es)` +
-        ` (perfil público: ${this.PublicProfileId ?? "ninguno"}).`,
+      `Permisos cargados: ${mapasMetodos.size} método(s) y ${mapasOpciones.size} opción(es).`,
     );
   };
 
