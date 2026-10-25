@@ -161,4 +161,13 @@ export class User {
 
     return { ok: true };
   }
+
+  async listarPerfiles() {
+    const { rows } = await this.#db.query(queries.findAllActiveProfiles);
+    return rows.map(({ id, nombre_perfil, descripcion }) => ({
+      id,
+      nombre: nombre_perfil,
+      descripcion,
+    }));
+  }
 }

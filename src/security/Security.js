@@ -260,14 +260,19 @@ class Security {
     }
 
     const perfiles = Array.isArray(req?.session?.profiles) ? req.session.profiles : [];
-    const perfilesEfectivos =
-      this.PublicProfileId != null && !perfiles.includes(this.PublicProfileId)
-        ? [...perfiles, this.PublicProfileId]
-        : perfiles;
+    const perfilesEfectivos = perfiles;
 
-    const autorizado = perfilesEfectivos.some((perfilId) =>
-      this.getPermissionMethod(llaveMetodo(subsystem, clase, method, perfilId)),
-    );
+    const esGetOptionsAnonimo =
+      subsystem === "Security" &&
+      clase === "Menu" &&
+      method === "getOptions" &&
+      !req?.session?.userID;
+
+    const autorizado =
+      esGetOptionsAnonimo ||
+      perfilesEfectivos.some((perfilId) =>
+        this.getPermissionMethod(llaveMetodo(subsystem, clase, method, perfilId)),
+      );
 
     if (!autorizado) {
       if (!req?.session?.userID) {

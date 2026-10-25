@@ -91,3 +91,9 @@ updatePassword: |
          updated_at = NOW()
    WHERE id = $2
   RETURNING id
+
+findAllActiveProfiles: |
+  SELECT id, nombre_perfil, descripcion
+  FROM perfil
+  WHERE activo
+  ORDER BY id
