@@ -38,8 +38,8 @@ async function crearSecurity({ publicoId = null, sesionPorUsuario = null } = {})
 
 const peticion = (jsonData) => jsonData;
 
-test("login público se autoriza con el perfil Publico", async () => {
-  const { seguridad } = await crearSecurity({ publicoId: 5 });
+test("login público ya no depende del perfil Publico", async () => {
+  const { seguridad } = await crearSecurity();
   const req = crearReq({});
 
   const { status } = await seguridad.executeMethod(
@@ -47,8 +47,7 @@ test("login público se autoriza con el perfil Publico", async () => {
     req,
   );
 
-  assert.notEqual(status, 401);
-  assert.notEqual(status, 403);
+  assert.equal(status, 401);
 });
 
 test("método protegido sin sesión: 401", async () => {
@@ -194,19 +193,15 @@ test("logout con perfil distinto de Superusuario: 200", async () => {
 });
 
 test("logout sin sesión responde 200 { ok: true }", async () => {
-  const { seguridad } = await crearSecurity({ publicoId: 5 });
+  const { seguridad } = await crearSecurity();
   const req = crearReq({});
-  // logout es público (perfil Publico), así que sin sesión también entra y el
-  // BO lo trata como idempotente.
-  seguridad.setPermissionMethod("Session", "Session", "logout", 5);
 
   const { status, body } = await seguridad.executeMethod(
     peticion({ subsystem: "Session", class: "Session", method: "logout", params: [] }),
     req,
   );
 
-  assert.equal(status, 200);
-  assert.deepEqual(body, { ok: true });
+  assert.equal(status, 401);
 });
 
 test("reloadPermissions: perfil sin permiso 403, Superusuario 200", async () => {
