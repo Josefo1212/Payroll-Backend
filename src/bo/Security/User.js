@@ -29,6 +29,7 @@ export class User {
       password,
       perfil_id,
       perfiles,
+      laboral,
     } = datos ?? {};
 
     if (!cedula || !primer_nombre || !primer_apellido || !username || !password) {
@@ -56,6 +57,18 @@ export class User {
 
     if (!perfilesAsignados.every((id) => Number.isInteger(id) && id > 0)) {
       throw new ErrorNegocio("Los perfiles deben ser ids enteros positivos.", 400);
+    }
+
+    if (laboral) {
+      if (!laboral.cargo_id || !laboral.fecha_inicio || !laboral.tipo_pago || !laboral.frecuencia_pago || laboral.monto === undefined || laboral.monto === null) {
+        throw new ErrorNegocio("Datos laborales incompletos: cargo_id, fecha_inicio, tipo_pago, frecuencia_pago y monto son obligatorios.", 400);
+      }
+      if (!["POR_HORA", "SALARIO_FIJO"].includes(laboral.tipo_pago)) {
+        throw new ErrorNegocio("tipo_pago inválido. Debe ser POR_HORA o SALARIO_FIJO.", 400);
+      }
+      if (!["SEMANAL", "QUINCENAL", "MENSUAL"].includes(laboral.frecuencia_pago)) {
+        throw new ErrorNegocio("frecuencia_pago inválido. Debe ser SEMANAL, QUINCENAL o MENSUAL.", 400);
+      }
     }
 
     try {
@@ -89,6 +102,13 @@ export class User {
           );
         }
 
+        if (laboral) {
+          const cargo = await cliente.query(queries.findCargoById, [Number(laboral.cargo_id)]);
+          if (cargo.rows.length === 0 || cargo.rows[0].activo === false) {
+            throw new ErrorNegocio("El cargo indicado no existe o está inactivo.", 400);
+          }
+        }
+
         const passwordHash = await passwordService.hashear(password);
 
         const persona = await cliente.query(queries.insertPersona, [
@@ -117,7 +137,29 @@ export class User {
           perfilesAsignados,
         ]);
 
-        return { ...usuario.rows[0], perfiles: perfilesAsignados };
+        let contratoId = null;
+        if (laboral) {
+          const vigenteDesde = laboral.vigente_desde || laboral.fecha_inicio;
+          const contrato = await cliente.query(queries.insertContrato, [
+            persona.rows[0].id,
+            Number(laboral.cargo_id),
+            laboral.fecha_inicio,
+            laboral.fecha_fin ?? null,
+            laboral.tipo_pago,
+            laboral.frecuencia_pago,
+            laboral.horas_semanales ?? null,
+          ]);
+          contratoId = contrato.rows[0].id;
+          await cliente.query(queries.insertContratoSalario, [
+            contratoId,
+            laboral.monto,
+            vigenteDesde,
+            laboral.vigente_hasta ?? null,
+            laboral.motivo ?? null,
+          ]);
+        }
+
+        return { ...usuario.rows[0], perfiles: perfilesAsignados, contratoId };
       });
     } catch (error) {
       if (error?.code === "23505") {

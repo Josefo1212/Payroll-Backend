@@ -92,3 +92,19 @@ findAllActiveProfiles: |
   FROM perfil
   WHERE activo
   ORDER BY id
+
+findCargoById: |
+  SELECT id, nombre, activo
+  FROM cargo
+  WHERE id = $1
+
+insertContrato: |
+  INSERT INTO contrato
+    (persona_id, cargo_id, fecha_inicio, fecha_fin, tipo_pago, frecuencia_pago, horas_semanales, estado)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, 'VIGENTE')
+  RETURNING id
+
+insertContratoSalario: |
+  INSERT INTO contrato_salario (contrato_id, monto, vigente_desde, vigente_hasta, motivo)
+  VALUES ($1, $2, $3, $4, $5)
+  RETURNING id
