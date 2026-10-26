@@ -93,6 +93,12 @@ findAllActiveProfiles: |
   WHERE activo
   ORDER BY id
 
+findAllActiveCargos: |
+  SELECT id, nombre, descripcion
+  FROM cargo
+  WHERE activo
+  ORDER BY nombre
+
 findCargoById: |
   SELECT id, nombre, activo
   FROM cargo
