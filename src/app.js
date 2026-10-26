@@ -2,6 +2,7 @@ import express from "express";
 import session from "express-session";
 import cors from "cors";
 import dotenv from "dotenv";
+import helmet from "helmet";
 import { datosSegurosDeError } from "./errors/logError.js";
 import routes from "./routes/routes.js";
 
@@ -15,7 +16,12 @@ if (esProduccion && !process.env.SESSION_SECRET) {
 
 const app = express();
 
-app.use(express.json());
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
+
+app.use(helmet());
+
+app.use(express.json({ limit: "10kb" }));
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
   credentials: true,
