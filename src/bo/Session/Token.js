@@ -42,7 +42,7 @@ export class Token {
       throw new ErrorNegocio(MENSAJE, 401);
     }
 
-    const { rows: perfiles } = await this.#db.query(sessionQueries.findProfilesByUserId, [
+    const { rows: perfiles } = await this.#db.query(queries.findProfilesByUserId, [
       fila.usuario_id,
     ]);
     if (perfiles.length === 0) {
