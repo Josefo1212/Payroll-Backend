@@ -3,6 +3,7 @@ import { db } from "../database/Database.js";
 import { Session } from "../bo/Session/Session.js";
 import { Token } from "../bo/Session/Token.js";
 import { ErrorNegocio } from "../errors/ErrorNegocio.js";
+import { verificarOrigenCsrf } from "../middlewares/csrf.js";
 
 const authRoutes = express.Router();
 
@@ -20,7 +21,7 @@ authRoutes.post("/login", async (req, res) => {
   }
 });
 
-authRoutes.post("/logout", async (req, res) => {
+authRoutes.post("/logout", verificarOrigenCsrf, async (req, res) => {
   try {
     const session = new Session(db, req);
     const resultado = await session.logout();
@@ -33,7 +34,7 @@ authRoutes.post("/logout", async (req, res) => {
   }
 });
 
-authRoutes.post("/refresh", async (req, res) => {
+authRoutes.post("/refresh", verificarOrigenCsrf, async (req, res) => {
   try {
     const token = new Token(db, req);
     const resultado = await token.refresh();
@@ -48,6 +49,7 @@ authRoutes.post("/refresh", async (req, res) => {
 
 authRoutes.get("/me", async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     const session = new Session(db, req);
     const resultado = session.getSession();
     if (!resultado) {
