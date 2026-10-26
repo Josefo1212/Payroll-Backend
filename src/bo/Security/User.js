@@ -210,4 +210,9 @@ export class User {
       descripcion,
     }));
   }
+
+  async listarCargos() {
+    const { rows } = await this.#db.query(queries.findAllActiveCargos);
+    return rows;
+  }
 }

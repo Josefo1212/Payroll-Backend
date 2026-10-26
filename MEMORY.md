@@ -77,3 +77,5 @@ algo en regla permanente, se mueve a su documento y se quita de este archivo.
 - **Spec 005 (perfiles)**: Eliminado perfil "Público" genérico. `Menu/getOptions` sigue en `/execute` con excepción anónima explícita. `perfil` reiniciado con IDs 1-4 (Superusuario, Administrador, GerenteRRHH, Empleado). Añadido `Security/User/listarPerfiles` para desacoplar formulario de registro.
 - **Spec 006 (registro completo)**: `Security/User/registrar` ahora acepta bloque opcional `laboral` y crea `contrato` + `contrato_salario` en misma transacción (retrocompatible).
 - **Tests**: 62/62 OK.
+
+- **Spec 007 (listar cargos)**: Añadido `Security/User/listarCargos`. Permisos para listar cargos y registrar solo Superusuario y RRHH (Administrador sin permiso para registrar). Cargos sembrados (Gerente de RRHH, Contador, Analista de Nómina, Asistente Administrativo). Registro con bloque `laboral` crea contrato/contrato_salario.
