@@ -67,3 +67,8 @@ revokeRefreshToken: |
    WHERE id = $1
      AND revocado_en IS NULL
   RETURNING id
+
+findUserActiveById: |
+  SELECT activo
+  FROM usuario
+  WHERE id = $1

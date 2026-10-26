@@ -42,10 +42,19 @@ export class Token {
       throw new ErrorNegocio(MENSAJE, 401);
     }
 
+    const { rows: usuarioActivo } = await this.#db.query(queries.findUserActiveById, [
+      fila.usuario_id,
+    ]);
+    if (!usuarioActivo[0]?.activo) {
+      await this.#db.query(queries.revokeFamily, [fila.familia_id]);
+      throw new ErrorNegocio(MENSAJE, 401);
+    }
+
     const { rows: perfiles } = await this.#db.query(queries.findProfilesByUserId, [
       fila.usuario_id,
     ]);
     if (perfiles.length === 0) {
+      await this.#db.query(queries.revokeFamily, [fila.familia_id]);
       throw new ErrorNegocio(MENSAJE, 401);
     }
 
@@ -53,6 +62,21 @@ export class Token {
     const expira = tokenService.expiracionRefresh();
 
     const nuevoId = await this.#db.transaction(async (cliente) => {
+      const { rows: filaBloqueada } = await cliente.query(
+        `${queries.findRefreshTokenByHash} FOR UPDATE`,
+        [hash],
+      );
+      const actual = filaBloqueada[0];
+
+      if (!actual || actual.revocado_en || actual.reemplazado_por) {
+        await cliente.query(queries.revokeFamily, [fila.familia_id]);
+        throw new ErrorNegocio(MENSAJE, 401);
+      }
+
+      if (new Date(actual.expira_en) <= new Date()) {
+        throw new ErrorNegocio(MENSAJE, 401);
+      }
+
       const { rows: creada } = await cliente.query(queries.insertRefreshToken, [
         fila.usuario_id,
         fila.familia_id,
@@ -62,7 +86,7 @@ export class Token {
         this.#req?.get?.("user-agent") ?? null,
       ]);
       const id = creada[0].id;
-      await cliente.query(queries.revokeRefreshToken, [fila.id, id]);
+      await cliente.query(queries.revokeRefreshToken, [actual.id, id]);
       return id;
     });
 
