@@ -11,9 +11,13 @@ if (esProduccion && !process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET es obligatoria en producción.");
 }
 
-const secreto = new TextEncoder().encode(
-  process.env.JWT_SECRET || "secreto_jwt_solo_desarrollo",
-);
+const jwtSecret = process.env.JWT_SECRET || "secreto_jwt_solo_desarrollo";
+
+if (esProduccion && jwtSecret.length < 32) {
+  throw new Error("JWT_SECRET debe tener al menos 32 caracteres en producción.");
+}
+
+const secreto = new TextEncoder().encode(jwtSecret);
 
 const ACCESS_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
 const REFRESH_TTL_DIAS = Number(process.env.REFRESH_TOKEN_TTL_DIAS || 7);
@@ -32,7 +36,10 @@ class TokenService {
 
   verificarAccess = async (token) => {
     try {
-      const { payload } = await jwtVerify(token, secreto, { issuer: EMISOR });
+      const { payload } = await jwtVerify(token, secreto, {
+        issuer: EMISOR,
+        algorithms: [ALGORITMO],
+      });
       return payload;
     } catch {
       return null;
