@@ -269,6 +269,19 @@ class Security {
       method === "getOptions" &&
       !req?.session?.userID;
 
+    const esPermitidoConCambioClave =
+      subsystem === "Session" && clase === "Session" && method === "logout";
+
+    if (req?.session?.userID && req?.session?.debeCambiarClave && !esPermitidoConCambioClave && !(subsystem === "Security" && clase === "User" && method === "cambiarClave")) {
+      console.warn(
+        `403: ${subsystem}/${clase}/${method} bloqueado por cambio de clave requerido.`,
+      );
+      return {
+        status: 403,
+        body: { error: "Debes cambiar tu contraseña antes de continuar." },
+      };
+    }
+
     const autorizado =
       esMetodoSesionAnonimo ||
       esGetOptionsAnonimo ||
