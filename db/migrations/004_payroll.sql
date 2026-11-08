@@ -71,7 +71,10 @@ ON CONFLICT (codigo) DO NOTHING;
 INSERT INTO parametro_aporte_ley
   (tipo_aporte_id, tasa_empleado, tasa_patronal, tope_base, piso_base,
    vigente_desde, vigente_hasta, base_legal)
-SELECT t.id, v.tasa_empleado, v.tasa_patronal, v.tope_base, v.piso_base,
+-- Los NULL de un VALUES sin tipo se resuelven como text: hay que castear
+-- explícitamente para que coincidan con decimal(12,2) en la tabla.
+SELECT t.id, v.tasa_empleado::numeric(6,4), v.tasa_patronal::numeric(6,4),
+       v.tope_base::numeric(12,2), v.piso_base::numeric(12,2),
        DATE '2000-01-01', NULL, v.base_legal
 FROM (VALUES
   ('SSO',          0.0400, 0.0900, NULL, NULL, 'Ley del Seguro Social'),

@@ -165,3 +165,25 @@ es. Orden cronológico.
   recibos propios del empleado y 403 al intentar procesar. Limpia sus datos.
 - `PENDIENTE-SOCIO.txt` con los pasos para habilitar el branch de Neon
   (credencial actual invalida: `password authentication failed`).
+
+### Aplicacion de 004 y 005 en Neon (2026-11-08)
+
+- La credencial de `.env` volvio a autenticar. Estado inicial verificado: 27
+  tablas base, `cargo` con 4 filas (002 aplicada), pero sin `registro_horas`,
+  sin subsistema `Payroll`, sin conceptos ni aportes de ley: faltaban 004 y
+  005.
+- Antes de migrar se guardo un respaldo del esquema en
+  `/tmp/opencode/payroll-backup-<fecha>.sql` (fuera del repo).
+- La primera corrida de 004 fallo al insertar `parametro_aporte_ley`: los
+  `NULL` de un `VALUES` sin tipo se resuelven como `text` y no encajan en
+  `decimal(12,2)`. Como la migracion va en `BEGIN/COMMIT`, revirtio completa;
+  se corrigio con casts explicitos (`::numeric(12,2)`) y se reejecuto.
+- Resultado: 004 y 005 aplicadas en orden, ambas idempotentes al reejecutar
+  (0 filas insertadas). Verificado: 8 clases y 33 metodos de Payroll, 12
+  conceptos, 4 tipos de aporte, 103 permisos de metodo, 8 opciones de menu y
+  `Security/User/listarPersonas` con permisos.
+- Verificacion: `pnpm test` 69/69; `node scripts/manual/payroll_e2e.mjs --yes`
+  50/50 comprobaciones y `PAYROLL E2E OK` (asignaciones 575.00, deducciones
+  86.63, neto 488.37; el empleado ve su recibo y recibe 403 al procesar).
+- Diagrama `archify` refrescado con el subsistema Payroll (9/9 checks
+  showcase, 0 errores, 0 warnings, visual-check sin overflow).

@@ -1,3 +1,14 @@
+PENDIENTE DEL SOCIO — RESUELTO (2026-11-08)
+===========================================
+
+Estado: **004 y 005 ya están aplicadas** en el branch de desarrollo de Neon
+(`ep-rough-pine-b4ykdwvj`). La credencial de `.env` volvió a autenticar.
+Verificación: `pnpm test` 69/69 y `payroll_e2e.mjs` 50/50 → `PAYROLL E2E OK`.
+Se corrigió un cast en la 004 (`tope_base`/`piso_base` NULL → `numeric`).
+Este documento se conserva como referencia histórica de los pasos originales.
+
+CONTEXTO ORIGINAL
+-----------------
 PENDIENTE DEL SOCIO — HABILITAR NEON Y VERIFICAR EL SUBSISTEMA PAYROLL
 ======================================================================
 

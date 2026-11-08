@@ -79,9 +79,10 @@ interés simple plano). La migración `db/migrations/004_payroll.sql` agrega
 clases/métodos/permisos y menú; la `005_listar_personas.sql` agrega
 `Security/User/listarPersonas` (RRHH necesita el `persona_id`). Pruebas del
 calculador en `test/payrollCalculator.test.js` (69/69) y verificación E2E en
-`scripts/manual/payroll_e2e.mjs`. **Falta aplicar 004/005 en un branch de
-Neon y correr el E2E**; los pasos para el socio están en
-`PENDIENTE-SOCIO.txt`.
+`scripts/manual/payroll_e2e.mjs`. **Actualización 2026-11-08: 004 y 005 ya
+están aplicadas en el branch de desarrollo de Neon** (la credencial volvió a
+autenticar); `pnpm test` 69/69 y `payroll_e2e.mjs` 50/50 → `PAYROLL E2E OK`.
+Los pasos originales para el socio quedan en `PENDIENTE-SOCIO.txt`.
 
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
 consultas de `queries.yaml` a los BO.
@@ -342,6 +343,11 @@ o datos desechables), y ninguna prueba depende de otra.
 
 - **`node-pg` devuelve `DECIMAL` como texto.** Sumarlos con `+` concatena
   cadenas. Ver skill `nomina-dominio`.
+- **Un `NULL` dentro de un `VALUES` sin tipo se resuelve como `text`.** Al
+  insertar desde `VALUES (... NULL, NULL ...)` en una columna `decimal`, hay
+  que castear explícitamente (`NULL::numeric(12,2)` o `v.col::numeric`), o
+  PostgreSQL falla con "column is of type numeric but expression is of type
+  text". Le pasó a la 004 en `parametro_aporte_ley`.
 - **La cookie de sesión viaja con `credentials: 'include'`**; sin eso el
   navegador no manda `connect.sid` y el `403`/`401` aparece "sin razón".
 - **Un `Pool`, no una conexión por petición.** Varias sentencias que deben ir
