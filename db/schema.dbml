@@ -1,5 +1,5 @@
 // ==========================================
-// SISTEMA DE NÓMINA — MODELO DE DATOS v8 (27 tablas)
+// SISTEMA DE NÓMINA — MODELO DE DATOS v9 (28 tablas)
 // Regla: tablas transaccionales -> UUID; tablas maestras -> serial (int)
 // v8: se agrega refresh_token (sesiones JWT con rotación)
 //
@@ -283,6 +283,7 @@ Table cargo {
   id int [pk, increment]
   nombre varchar(100) [not null, unique]
   descripcion varchar(200)
+  valor_hora_base decimal(12,2) [note: 'Tarifa hora sugerida; el valor real por persona vive en contrato_salario']
   activo boolean [not null, default: true]
 }
 
@@ -464,6 +465,24 @@ Table periodo_nomina {
   Note: 'CHECK chk_periodo_fechas: Fecha_fin >= Fecha_inicio. Solo entran personas con contrato de la misma frecuencia.'
 }
 
+// Asistencia: horas normales y extra realmente trabajadas (una fila por día)
+Table registro_horas {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  fecha date [not null]
+  horas_normales decimal(5,2) [not null, default: 0]
+  horas_extra decimal(5,2) [not null, default: 0]
+  observacion varchar(200)
+  registrado_por uuid [not null, ref: > usuario.id]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (persona_id, fecha) [unique]
+  }
+
+  Note: 'CHECK: horas_normales >= 0, horas_extra >= 0 y la suma > 0.'
+}
+
 // Insumos variables del cálculo: horas extra, faltas, bonos puntuales
 Table novedad {
   id uuid [pk, default: `gen_random_uuid()`]
@@ -614,6 +633,7 @@ TableGroup ley_y_seguro_social {
 TableGroup nomina {
   concepto
   concepto_persona
+  registro_horas
   novedad
   periodo_nomina
   recibo_pago

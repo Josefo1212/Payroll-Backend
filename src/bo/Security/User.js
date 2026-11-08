@@ -215,4 +215,9 @@ export class User {
     const { rows } = await this.#db.query(queries.findAllActiveCargos);
     return rows;
   }
+
+  async listarPersonas() {
+    const { rows } = await this.#db.query(queries.findAllPersonas);
+    return rows;
+  }
 }
