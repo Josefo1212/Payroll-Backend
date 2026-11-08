@@ -124,3 +124,44 @@ es. Orden cronológico.
 - **Permisos registro**: `Security/User/registrar` solo para Superusuario y RRHH (se quitó a Administrador).
 - **Migración 002**: Crea método `listarCargos`, asigna permisos y siembra cargos.
 - **Verificación**: Login OK, `listarCargos` retorna 4 cargos, registro con `laboral` crea contrato y contrato_salario.
+
+## 2026-11-08 - Subsistema Payroll (nomina)
+
+- Se implemento el primer dominio de negocio completo: subsistema `Payroll`
+  con 8 clases (`Cargo`, `Hours`, `Affiliation`, `Concept`, `Novedad`,
+  `Loan`, `Period`, `Receipt`) descubiertas dinamicamente por carpeta.
+- `PayrollCalculator` (`decimal.js`): 240 horas/mes, recargo de hora extra
+  x1.5, prorrateo por frecuencia (MENSUAL completo, QUINCENAL /2, SEMANAL
+  x12/52), aportes de ley con vigencia y cuotas de prestamo con interes
+  simple plano (la ultima cuota absorbe el redondeo).
+- `db/migrations/004_payroll.sql`: tabla `registro_horas`, columna
+  `cargo.valor_hora_base`, 12 conceptos base, tipos y parametros de aporte
+  de ley (SSO 4/9%, paro 0.5/2%, FAOV 1/2%, INCES 0/2%), 8 clases, 33
+  metodos, permisos (RRHH/GerenteRRHH/Administrador/Superusuario y lectura
+  propia para Empleado) y opciones de menu. Idempotente.
+- `src/bo/Payroll/queries.yaml` con 64 consultas; `loader.js` las expone.
+- Verificado sin BD: `node --check` de los 9 archivos, import de los 8 BO,
+  descubrimiento en `Security` (8 clases Payroll, `_scope.js` omitido por
+  el regex) y prueba de calculos (12000/240=50.00, extra 75.00, quincenal
+  6000.00, semanal 2769.23, prestamo 10000@10%/4=2750.00).
+- Pendiente: aplicar 004 en un branch de Neon (fallo de autenticacion al
+  intentar el dry-run), prueba curl del flujo completo y refrescar
+  diagrama `archify` y grafo `graphify`.
+
+### Cierre de alcance local (2026-11-08)
+
+- Se agrego `Security/User/listarPersonas` (query `findAllPersonas`) para que
+  RRHH obtenga el `persona_id`; migracion idempotente
+  `db/migrations/005_listar_personas.sql` con permisos para
+  RRHH/GerenteRRHH/Administrador/Superusuario.
+- Se corrigio el orden de `scripts/db-setup.sh`: `db/seed-seguridad.sql` va
+  antes de las migraciones, porque 001-005 asignan permisos a perfiles que
+  crea el seed.
+- Pruebas automatizadas del calculador en
+  `test/payrollCalculator.test.js` (240 h, recargo x1.5, prorrateo, cuotas
+  con redondeo). `pnpm test` 69/69.
+- Verificacion E2E por HTTP en `scripts/manual/payroll_e2e.mjs`: alta con
+  contrato, afiliaciones, bono, horas, prestamo, periodo, procesar, pagar,
+  recibos propios del empleado y 403 al intentar procesar. Limpia sus datos.
+- `PENDIENTE-SOCIO.txt` con los pasos para habilitar el branch de Neon
+  (credencial actual invalida: `password authentication failed`).

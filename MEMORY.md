@@ -79,3 +79,5 @@ algo en regla permanente, se mueve a su documento y se quita de este archivo.
 - **Tests**: 62/62 OK.
 
 - **Spec 007 (listar cargos)**: Añadido `Security/User/listarCargos`. Permisos para listar cargos y registrar solo Superusuario y RRHH (Administrador sin permiso para registrar). Cargos sembrados (Gerente de RRHH, Contador, Analista de Nómina, Asistente Administrativo). Registro con bloque `laboral` crea contrato/contrato_salario.
+
+- **Subsistema `Payroll` implementado (2026-11-08)**: 8 BO en `src/bo/Payroll/` (`Cargo`, `Hours`, `Affiliation`, `Concept`, `Novedad`, `Loan`, `Period`, `Receipt`), `PayrollCalculator` con `decimal.js` (240 h/mes, extra ×1.5, prorrateo por frecuencia, cuotas con interés simple plano), `queries.yaml` (64 consultas), `db/migrations/004_payroll.sql` (registro_horas, `cargo.valor_hora_base`, 12 conceptos, aportes de ley, 8 clases, 33 métodos, permisos y menú) y `005_listar_personas.sql` (`Security/User/listarPersonas`). Tests del calculador: **69/69**. E2E en `scripts/manual/payroll_e2e.mjs`. **Falta aplicar 004/005 en un branch de Neon y correr el E2E**; pasos en `PENDIENTE-SOCIO.txt`. Diagrama/graph y commit pendientes.

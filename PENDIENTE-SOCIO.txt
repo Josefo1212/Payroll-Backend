@@ -1,0 +1,85 @@
+PENDIENTE DEL SOCIO — HABILITAR NEON Y VERIFICAR EL SUBSISTEMA PAYROLL
+======================================================================
+
+QUÉ PASA HOY
+------------
+El código de nómina (subsistema Payroll) está terminado y las 69 pruebas
+automáticas pasan. Lo único que falta es la base de datos: la cadena que
+está en .env responde "password authentication failed for user
+'neondb_owner'". Es decir, la credencial actual no sirve o fue rotada.
+
+QUÉ TENÉS QUE HACER (en orden)
+------------------------------
+1) Entrá a la consola de Neon y creá un branch NUEVO a partir del branch
+   donde vive la base del proyecto (el que ya tiene el esquema base y los
+   seeds). Nombre sugerido: verificacion-nomina.
+   - Si el branch estuviera vacío: primero hay que correr db/init.sql y
+     db/seed-seguridad.sql (ver paso 3).
+
+2) Copiá la cadena de conexión POOLED de ese branch (el host contiene
+   "-pooler") y pasámela por un canal seguro (WhatsApp/gestor de claves,
+   nunca por git ni por un archivo versionado).
+
+3) Aplicá las migraciones pendientes, EN ESTE ORDEN:
+   0. db/init.sql              (solo si el branch está vacío)
+   1. db/seed-seguridad.sql    (perfiles, subsistemas, clases, métodos)
+   2. db/migrations/001_fix_registro.sql
+   3. db/migrations/002_cargos_y_permisos.sql
+   4. db/migrations/003_permisos_sesion.sql
+   5. db/migrations/004_payroll.sql
+   6. db/migrations/005_listar_personas.sql
+   7. db/seed-usuario-prueba.sql   (crea admin_prueba / Password123)
+
+   Opción A (recomendada, Bash/Git Bash/WSL/Linux con psql):
+     export DATABASE_URL='<cadena-pooled-del-branch>'
+     ./scripts/db-setup.sh --with-test-user
+   Ese script ya hace: init (si falta), seed de seguridad, 001–005 y el
+   usuario de prueba.
+
+   Opción B (consola SQL de Neon): pegá el contenido de cada archivo en el
+   orden de arriba.
+
+   Nota: el seed de seguridad va ANTES de las migraciones porque las
+   migraciones asignan permisos a perfiles que crea ese seed.
+
+4) Verificá que quedó bien (en la consola SQL de Neon):
+     SELECT nombre FROM subsistema WHERE nombre = 'Payroll';
+     SELECT count(*) FROM concepto WHERE codigo IN
+       ('SUELDO_BASE','HORA_EXTRA','BONO','SSO','PARO_FORZOSO','FAOV','CUOTA_PRESTAMO');
+     SELECT codigo FROM tipo_aporte_ley ORDER BY id;
+     SELECT count(*) FROM registro_horas;
+     SELECT nombre FROM metodo WHERE nombre IN ('listarPersonas');
+
+5) Avisame que el branch está listo y pasame la cadena pooled. Yo actualizo
+   .env, corro la prueba de punta a punta y cierro el resto (diagrama,
+   grafo y commit).
+
+PRUEBA DE PUNTA A PUNTA (la corro yo, pero podés correrla vos)
+--------------------------------------------------------------
+Con DATABASE_URL apuntando al branch NUEVO (desechable):
+
+   pnpm test                                  # 69 pruebas, no toca la BD
+   node scripts/manual/payroll_e2e.mjs --yes  # escribe en la BD
+
+Resultado esperado: una tabla de comprobaciones y al final
+"PAYROLL E2E OK". La prueba crea un empleado, horas, bono, afiliaciones y
+préstamo, procesa y paga un período semanal, y verifica:
+   asignaciones = 575.00
+   deducciones  = 86.63
+   neto         = 488.37
+También verifica que el empleado ve su recibo y que NO puede procesar
+períodos (403). Al terminar limpia sus propios datos.
+
+IMPORTANTE
+----------
+- Usá un branch DESECHABLE para el E2E: procesar un período genera recibos
+  para todos los contratos vigentes de esa frecuencia. Cuando termine la
+  verificación, ese branch se puede borrar.
+- No corras el E2E ni las migraciones contra producción.
+- .env no se versiona; la cadena de Neon no debe quedar en git.
+- Si el E2E falla, los motivos más probables son:
+    * falta la migración 004  -> "Faltan los tipos de aporte de ley"
+    * falta la migración 005  -> listarPersonas responde 403/501
+    * falta 002               -> no hay cargos para asignar al contrato
+    * hay más de un contrato semanal vigente -> correr en branch limpio
+    * admin_prueba no existe  -> correr db/seed-usuario-prueba.sql

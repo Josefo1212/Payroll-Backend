@@ -1,0 +1,765 @@
+SISTEMA DE NOMINA — GUIA COMPLETA
+=================================
+
+Esta guia explica, en lenguaje sencillo, que es el sistema, como esta armado,
+como viaja una peticion, como se calcula un recibo, que leyes se modelaron y
+como levantarlo y probarlo. Esta pensada para que cualquier integrante del
+equipo (o el profesor) pueda entender el proyecto sin leer todo el codigo.
+
+Indice
+------
+1.  Que es el sistema
+2.  Glosario: las palabras que usa el sistema
+3.  Arquitectura general
+4.  El viaje de una peticion (flujo completo)
+5.  Seguridad: usuarios, perfiles, permisos y sesiones
+6.  Base de datos: esquema, migraciones y seeds
+7.  El subsistema Payroll (nomina) en detalle
+8.  Reglas de negocio y formulas de calculo
+9.  Las leyes venezolanas modeladas
+10. Ejemplo numerico completo (el mismo del E2E)
+11. Como levantar el backend y como probarlo
+12. Estado actual y pendientes
+13. Errores comunes y como interpretarlos
+14. Preguntas frecuentes
+
+
+1. QUE ES EL SISTEMA
+--------------------
+
+Es el backend de un sistema de nomina para Venezuela. Permite:
+
+  - Registrar personas y usuarios, con uno o varios perfiles.
+  - Definir cargos, contratos y el historial de salarios.
+  - Registrar horas normales y horas extra.
+  - Asignar conceptos recurrentes (por ejemplo un bono mensual fijo).
+  - Registrar novedades puntuales (un bono, un descuento, horas extra).
+  - Afiliar personas a aportes de ley (IVSS, paro forzoso, FAOV, INCES).
+  - Crear prestamos y repartirlos en cuotas.
+  - Abrir periodos de nomina, procesarlos y generar recibos.
+  - Pagar los recibos y consultar el recibo propio.
+
+Formas de pago:
+  - POR_HORA: el contrato guarda el valor de la hora.
+  - SALARIO_FIJO: el contrato guarda el salario MENSUAL.
+
+Frecuencias: SEMANAL, QUINCENAL o MENSUAL.
+
+Es un monolito: un solo servidor Node.js + Express y un unico punto de entrada
+para el negocio (POST /api/execute). No es microservicios. Es una decision
+consciente para un proyecto final: menos piezas, mas facil de defender.
+
+Una sola moneda. No hay tabla de monedas ni tasa de cambio.
+
+
+2. GLOSARIO: LAS PALABRAS QUE USA EL SISTEMA
+--------------------------------------------
+
+Persona
+  Los datos de la persona (cedula, nombres, apellidos, email, etc.).
+  Una persona puede existir sin usuario, pero un usuario siempre tiene persona.
+
+Usuario
+  La cuenta para entrar al sistema (username + password cifrada con bcrypt).
+  Tiene 1 a 1 con persona.
+
+Perfil
+  Un "rol" (Publico, Empleado, RRHH, Administrador, Superusuario).
+  Un usuario puede tener varios perfiles a la vez. Basta con que UNO autorice.
+
+Opcion
+  Lo que el usuario VE: una entrada de menu o una pantalla.
+  No da permiso para ejecutar nada; solo organiza la interfaz.
+
+Clase / Metodo
+  Lo que el servidor EJECUTA. Una clase es un archivo de negocio y un metodo
+  es una accion concreta (por ejemplo Payroll/Period/procesar).
+
+Permiso
+  No es una tabla "Permiso". El permiso ES la fila de las tablas puente:
+    permiso_opcion  (perfil <-> opcion)
+    permiso_metodo  (perfil <-> metodo)
+
+Cargo
+  Puesto de trabajo. Tiene un valor_hora_base SUGERIDO. La tarifa real de una
+  persona vive en contrato_salario, no en el cargo.
+
+Contrato
+  Une persona + cargo + tipo de pago + frecuencia + fechas. Solo puede haber
+  un contrato VIGENTE por persona sin solapamiento.
+
+Contrato_salario
+  Historial de salarios del contrato. Un aumento es una FILA NUEVA con su
+  vigencia. Nunca se edita el salario viejo: se cierra y se abre otro.
+
+Concepto
+  Una linea de nomina: SUELDO_BASE, HORA_EXTRA, BONO, SSO, FAOV, etc.
+  Cada concepto dice si es ASIGNACION, DEDUCCION o APORTE_PATRONAL.
+
+Concepto_persona
+  Un concepto recurrente asignado a una persona, con vigencia y valor.
+  Puede ser MONTO_FIJO o PORCENTAJE_SALARIO.
+
+Novedad
+  Un movimiento puntual de un periodo: un bono, un descuento, horas extra.
+  Nace PENDIENTE, se puede APROBAR o RECHAZAR y, al procesar, queda APLICADA.
+
+Registro_horas
+  Una fila por persona y dia con horas normales y horas extra.
+  Un dia perteneciente a un periodo ya procesado/pagado NO se puede tocar.
+
+Afiliacion_ley / Tipo_aporte_ley / Parametro_aporte_ley
+  Afiliacion_ley dice "esta persona esta afiliada a este tipo de aporte".
+  Tipo_aporte_ley es el catalogo (SSO, PARO_FORZOSO, VIVIENDA, INCES).
+  Parametro_aporte_ley guarda las tasas y topes CON VIGENCIA. Las tasas nunca
+  van escritas en el codigo.
+
+Periodo_nomina
+  Una ventana de fechas con una frecuencia. Estados: BORRADOR, PROCESADO,
+  PAGADO. Un periodo procesado o pagado es inmutable.
+
+Recibo_pago
+  La cabecera del recibo de una persona en un periodo. Hay uno solo por
+  persona y periodo. Guarda totales y datos del pago.
+
+Detalle_recibo
+  Cada linea del recibo. Tiene un UNICO origen: concepto recurrente, novedad,
+  cuota de prestamo o parametro de ley. El CHECK de la BD lo exige.
+
+Prestamo / Cuota_prestamo
+  Prestamo: monto, tasa, numero de cuotas y estado.
+  Cuota_prestamo: cada vencimiento. El SALDO NO se guarda: se calcula sumando
+  las cuotas PENDIENTES. Un campo calculado guardado se desincroniza.
+
+
+3. ARQUITECTURA GENERAL
+-----------------------
+
+  Cliente (front en otro repo)
+        |
+        |  POST /api/execute  { subsystem, class, method, params }
+        v
+  Express (src/app.js)
+        |
+        v
+  Security.executeMethod
+        1. valida la forma de la solicitud
+        2. valida sesion y permisos
+        3. busca la clase en disco (reflexion)
+        4. ejecuta el metodo del objeto de negocio
+        |
+        v
+  Objeto de negocio (src/bo/<Subsistema>/<Clase>.js)
+        |
+        v
+  Database (src/database/Database.js: db.query / db.transaction)
+        |
+        v
+  PostgreSQL (Neon)
+
+Reglas de arquitectura:
+  - Solo los objetos de negocio (BO) tocan la base de datos.
+  - Las rutas no llevan SQL. Los BO usan SQL parametrizado ($1, $2, ...).
+  - Un solo Pool de conexiones (maximo 10), reutilizado.
+  - Las consultas viven en archivos YAML y se cargan una sola vez.
+  - El orden de seguridad NO se invierte: forma -> permiso -> reflexion ->
+    ejecucion. Si se valida el permiso despues de cargar la clase, el cliente
+    ya eligio que archivo se carga antes de estar autorizado.
+
+Carpetas principales:
+
+  src/index.js                 arranque, carga permisos y escucha el puerto
+  src/app.js                   Express, helmet, CORS, JSON, sesion, rutas
+  src/routes/routes.js         monta /api y POST /api/execute
+  src/routes/authRoutes.js     /api/login, /api/logout, /api/refresh, /api/me
+  src/security/Security.js     descubrimiento de BO, mapas y executeMethod
+  src/database/Database.js     db.query y db.transaction sobre el Pool
+  src/config/database.js       Pool de pg y configuracion SSL
+  src/services/                logica reutilizable sin BD ni sesion
+  src/bo/<Subsistema>/         objetos de negocio y su queries.yaml
+  src/errors/                  ErrorNegocio y logs seguros
+  db/init.sql                  esquema base (se corre una vez)
+  db/migrations/NNN_*.sql      cambios posteriores sobre base con datos
+  db/seed-*.sql                datos iniciales (seguridad, usuario de prueba)
+  db/schema.dbml               modelo para dbdiagram.io (espejo del SQL)
+  test/                        pruebas automatizadas con node:test
+  scripts/                     utilidades (db-setup, hash, E2E manual)
+
+Dependencias principales:
+  express             servidor HTTP
+  express-session     sesion por cookie httpOnly
+  pg                  PostgreSQL (SQL parametrizado)
+  bcrypt              hash de contrasenas
+  decimal.js          aritmetica exacta de dinero
+  jose                JWT HS256 (access token)
+  yaml                carga de queries.yaml
+  cors, helmet, dotenv
+
+
+4. EL VIAJE DE UNA PETICION (FLUJO COMPLETO)
+--------------------------------------------
+
+Paso 0. El usuario entra:
+  POST /api/login  { username, password }
+  - Se busca el usuario y se compara la clave con bcrypt.
+  - Si la cuenta esta inactiva: 403. Si esta bloqueada por intentos: 423.
+  - Se cargan sus perfiles actuales desde la BD.
+  - Se guarda en la sesion: userID, userName, profiles, detallesPerfiles y
+    debeCambiarClave.
+  - Se emiten cookies httpOnly:
+      connect.sid    sesion de Express (24 h)
+      access_token   JWT HS256 (15 min por defecto)
+      refresh_token  token opaco que rota (7 dias por defecto)
+  - La cookie de sesion viaja solo si el front usa credentials: "include".
+
+Paso 1. El cliente pide una accion:
+  POST /api/execute
+  {
+    "subsystem": "Payroll",
+    "class": "Period",
+    "method": "procesar",
+    "params": ["<uuid-del-periodo>"]
+  }
+
+Paso 2. Security.executeMethod:
+  a) Forma: subsystem, class y method deben ser alfanumericos y params un
+     arreglo. Si no: 400.
+  b) Sesion: si hay userID, se consulta el estado ACTUAL del usuario y sus
+     perfiles. Si la cuenta fue desactivada, se destruye la sesion y da 401.
+     Esto evita que una cookie vieja siga autorizando.
+  c) Cambio de clave obligatorio: si debeCambiarClave es true, solo se permite
+     Session/Session/logout y Security/User/cambiarClave. El resto: 403.
+  d) Permiso: se busca la llave
+        Subsistema_Clase_metodo_perfilId
+     en el mapa en memoria. Si el usuario tiene varios perfiles, basta con que
+     uno lo autorice (logica OR). Si no hay sesion y el metodo no es publico:
+     401. Si hay sesion pero no hay permiso: 403.
+  e) Reflexion: se valida el nombre con regex, se busca la clase en el mapa de
+     archivos descubiertos, se importa con import() dinamico (ESM) y se
+     verifica con hasOwnProperty que el metodo exista en el prototipo, que no
+     sea "constructor" y que sea funcion. Si no: 501.
+  f) Ejecucion: se instancia new Clase(db, req) y se llama al metodo con los
+     params. Si el BO lanza ErrorNegocio, se responde con su status. Si lanza
+     otra cosa, se registra y se responde 500 generico.
+
+Paso 3. El BO consulta la base con db.query o db.transaction y devuelve un
+  objeto. Express responde JSON con el status correspondiente.
+
+Metodos publicos (sin sesion):
+  Session/Session/login, logout, sessionExist, getSession (sin userID)
+  Security/Menu/getOptions (sin userID)
+  /api/refresh es una ruta propia: no pasa por /execute; usa el refresh_token
+  y valida el origen (CSRF) antes de rotar.
+
+Ejemplo con curl:
+
+  curl -i -c cookies.txt -H "Content-Type: application/json" \
+    -d '{"username":"admin_prueba","password":"Password123"}' \
+    http://localhost:3000/api/login
+
+  curl -i -b cookies.txt -H "Content-Type: application/json" \
+    -d '{"subsystem":"Payroll","class":"Period","method":"listar","params":[]}' \
+    http://localhost:3000/api/execute
+
+
+5. SEGURIDAD: USUARIOS, PERFILES, PERMISOS Y SESIONES
+-----------------------------------------------------
+
+Modelo (el del profesor):
+  Persona 1--1 Usuario --N:M-- Perfil   (tabla usuario_perfil)
+  Subsistema 1--N Opcion
+  Subsistema 1--N Clase 1--N Metodo
+  Perfil N:M Opcion   -> permiso_opcion
+  Perfil N:M Metodo   -> permiso_metodo
+
+Perfiles sembrados:
+  Publico         permisos de cualquier visitante.
+  Empleado        usuario final: solo lectura de lo propio.
+  RRHH            gestiona nomina, personas y usuarios.
+  Administrador   administracion general.
+  Superusuario    todo, incluida la recarga de permisos.
+  (La migracion 001 renombra GerenteRRHH a RRHH. Las migraciones 004 y 005
+   otorgan permisos a ambos nombres para no romper bases viejas.)
+
+Mapas en memoria:
+  PermissionMethodMap y PermissionOptionMap se cargan al arrancar con
+  loadPermission(). La llave del mapa es:
+    Subsistema_Clase_metodo_perfilId
+  Por eso los nombres no llevan "_": dos combinaciones distintas no pueden
+  producir la misma llave. Acceso O(1), sin consultar la BD en cada peticion.
+  Si se cambian permisos en la BD, se recargan con
+  Security/Admin/reloadPermissions o reiniciando el servidor.
+
+Sesion y JWT (conviven):
+  - express-session guarda la sesion en memoria (cookie connect.sid).
+  - access_token es un JWT firmado con jose (HS256) que viaja en cookie
+    httpOnly. Si no hay sesion, Security lo verifica y "hidrata" la sesion.
+  - refresh_token es opaco, se guarda hasheado en la tabla refresh_token y
+    rota en cada uso. Si se reutiliza uno viejo, se revoca la familia entera
+    (deteccion de robo). El logout revoca la familia.
+  - En produccion son obligatorias SESSION_SECRET y JWT_SECRET (>= 32 chars).
+
+Contrasenas:
+  - bcrypt con costo adecuado; nunca se guarda ni se loguea la clave plana.
+  - Bloqueo temporal por intentos fallidos (LOGIN_MAX_ATTEMPTS,
+    LOGIN_BLOCK_MINUTES) y retardo constante para no filtrar tiempos.
+  - Un usuario nuevo nace con debeCambiarClave = true y el backend bloquea los
+    demas metodos hasta que cambie la clave (no solo el front).
+
+Codigos de respuesta:
+  200  todo bien
+  400  solicitud invalida (forma, formato de fecha, monto, etc.)
+  401  no hay sesion o credenciales/actual incorrectas
+  403  hay sesion pero no hay permiso, cuenta inactiva o clave por cambiar
+  404  el recurso no existe
+  409  conflicto de estado (duplicado, periodo ya procesado, etc.)
+  423  cuenta bloqueada temporalmente por intentos
+  501  la clase o el metodo no existen (nombre mal escrito o no sembrado)
+  500  error inesperado (no se filtra el detalle al cliente)
+
+
+6. BASE DE DATOS: ESQUEMA, MIGRACIONES Y SEEDS
+---------------------------------------------
+
+Esquema base: db/init.sql (v8, 27 tablas, snake_case minuscula). Se corre UNA
+vez sobre una base vacia. Las tablas transaccionales y persona/usuario/
+refresh_token usan uuid; las maestras usan serial.
+
+Grupos de tablas:
+  Seguridad identidad:  usuario, perfil, usuario_perfil, refresh_token
+  Seguridad estructura: subsistema, opcion, clase, metodo
+  Seguridad permisos:   permiso_opcion, permiso_metodo
+  Personal:             persona, cuenta_bancaria, banco, cargo, contrato,
+                        contrato_salario
+  Ley y seguro social:  tipo_aporte_ley, parametro_aporte_ley, afiliacion_ley
+  Nomina:               concepto, concepto_persona, novedad, periodo_nomina,
+                        recibo_pago, detalle_recibo
+  Prestamos:            prestamo, cuota_prestamo
+
+La migracion 004 agrega la tabla registro_horas y la columna
+cargo.valor_hora_base, asi que el modelo pasa a 28 tablas. db/schema.dbml se
+mantiene espejado 1:1 (hoy marcado v9, 28 tablas).
+
+Reglas que viven en la BD (no solo en el codigo):
+  - Un solo contrato VIGENTE por persona sin solapamiento (exclusion).
+  - Una sola cuenta bancaria principal activa por persona (indice parcial).
+  - registro_horas: unico por (persona, fecha); horas no negativas y suma > 0.
+  - recibo_pago: unico por (persona, periodo).
+  - detalle_recibo: exactamente un origen por linea (CHECK).
+  - cuota_prestamo 1--1 detalle_recibo: una cuota se descuenta una sola vez.
+  - recibo_pago PAGADO exige fecha_pago y metodo_pago.
+  - ON DELETE RESTRICT lanza 23001 (restrict_violation), no 23503. Se manejan
+    ambos al traducir errores.
+
+Migraciones (orden actual):
+  db/init.sql                       esquema base (solo si la base esta vacia)
+  db/seed-seguridad.sql             subsistemas, clases, metodos, perfiles,
+                                    permisos y opciones
+  db/migrations/001_*.sql           ajustes de registro/perfiles
+  db/migrations/002_*.sql           cargos y permisos
+  db/migrations/003_*.sql           permisos de sesion
+  db/migrations/004_payroll.sql     registro_horas, conceptos, aportes de ley,
+                                    subsistema Payroll, 8 clases, 33 metodos,
+                                    permisos y menu
+  db/migrations/005_listar_personas.sql  Security/User/listarPersonas
+  db/seed-usuario-prueba.sql        admin_prueba/Password123 (solo desarrollo)
+
+Importante: el seed de seguridad va ANTES de las migraciones porque 001-005
+asignan permisos a perfiles que crea el seed.
+
+scripts/db-setup.sh hace todo eso en orden. Detecta si el esquema base ya
+existe (por la tabla usuario) y lo salta; despues aplica el seed y todas las
+migraciones NNN_*.sql en orden. Es repetible (idempotente).
+
+Las tasas y topes de ley NO estan en el codigo: viven en
+parametro_aporte_ley con vigencia. Cuando la ley cambia se cierra la fila
+vieja (vigente_hasta) y se crea una nueva; los recibos viejos conservan el
+parametro_id, la base y la tasa que usaron.
+
+
+7. EL SUBSISTEMA PAYROLL (NOMINA) EN DETALLE
+--------------------------------------------
+
+El subsistema Payroll vive en src/bo/Payroll/ y tiene 8 clases descubiertas
+automaticamente. Cada clase tiene su propia queries.yaml cargada por loader.js.
+
+Cargo (catalogo de tarifas sugeridas)
+  actualizarValorHora   Asigna cargo.valor_hora_base (sugerencia).
+  listarCargosTarifa    Lista cargos activos con su tarifa base.
+  Nota: la tarifa REAL de una persona es contrato_salario.monto.
+
+Hours (registro de horas)
+  registrar             Registra horas normales/extra de un dia. Rechaza dias
+                        de periodos no BORRADOR y horas negativas o en cero.
+  listarPorPersona      Lista horas de una persona en un rango.
+  listarPorPeriodo      Lista horas de un periodo.
+  misHoras              El empleado ve sus propias horas (rango opcional).
+  eliminar              Elimina un registro si el dia sigue editable.
+
+Concept (conceptos y recurrentes)
+  listar                Lista conceptos activos.
+  asignarRecurrente     Asigna un concepto a una persona con vigencia y valor
+                        (MONTO_FIJO o PORCENTAJE_SALARIO).
+  quitarRecurrente      Cierra la vigencia (vigente_hasta) de un recurrente.
+  listarRecurrentes     Lista los recurrentes de una persona.
+
+Novedad (movimientos puntuales del periodo)
+  registrar             Solo en periodo BORRADOR; pide cantidad o monto.
+  aprobar               PENDIENTE -> APROBADA.
+  rechazar              PENDIENTE -> RECHAZADA.
+  listarPorPeriodo      Lista novedades del periodo con datos de la persona.
+
+Loan (prestamos)
+  crear                 Crea prestamo + cuotas con interes simple plano.
+  listar                Lista prestamos de una persona.
+  saldos                Cuotas pendientes y saldo (calculado, no guardado).
+  anular                Solo si no hay cuotas ya descontadas.
+  misPrestamos          El empleado ve sus prestamos.
+
+Period (periodos de nomina)
+  crear                 Crea un periodo BORRADOR (frecuencia + fechas).
+  procesar              Calcula y genera los recibos de todos los contratos
+                        vigentes de esa frecuencia.
+  pagar                 Marca recibos y periodo como PAGADO.
+  anular                Solo PROCESADO: revierte cuotas y novedades, borra
+                        recibos y vuelve a BORRADOR.
+  listar                Lista periodos.
+  ver                   Devuelve el periodo con sus recibos.
+
+Receipt (recibos)
+  ver                   Recibo + desglose (uso gerencial).
+  listarPorPeriodo      Recibos de un periodo.
+  misRecibos            Recibos del usuario autenticado.
+  miDesglose            Desglose de un recibo propio; si es de otra persona,
+                        responde 403.
+
+Affiliation (afiliaciones de ley)
+  registrar             Afilia a una persona a un tipo de aporte.
+  listar                Lista las afiliaciones de una persona.
+  darDeBaja             Cierra una afiliacion con fecha_baja.
+
+Permisos:
+  RRHH, GerenteRRHH, Administrador y Superusuario: todos los metodos.
+  Empleado: misHoras, misRecibos, miDesglose y misPrestamos.
+  Security/User/listarPersonas: RRHH (y gerencia/administracion) lo usa para
+  obtener el persona_id que necesita el resto de Payroll.
+
+Descubrimiento:
+  Security.refreshBo() recorre src/bo/ al arrancar. Un archivo
+  src/bo/<Subsistema>/<Clase>.js se registra como <Subsistema>/<Clase>.
+  Los archivos con "_" al inicio se ignoran (por eso _scope.js y _fechas.js no
+  son clases de negocio). loader.js se registra como una "clase" loader por su
+  nombre valido; es inofensivo y es comportamiento preexistente.
+
+
+8. REGLAS DE NEGOCIO Y FORMULAS DE CALCULO
+------------------------------------------
+
+Dinero:
+  - NUNCA se usa float para dinero. node-pg devuelve DECIMAL como TEXTO y se
+    opera con decimal.js. Sumar con "+" concatenaria cadenas.
+  - Se redondea a 2 decimales con ROUND_HALF_UP por linea y en los totales.
+
+Sueldo del periodo:
+  - SALARIO_FIJO: el monto del contrato es MENSUAL.
+      MENSUAL    = monto
+      QUINCENAL  = monto / 2
+      SEMANAL    = monto * 12 / 52
+  - POR_HORA: el monto del contrato es el valor de la hora.
+      sueldo base = horas normales del periodo * valor hora
+
+Horas extra:
+  - valor hora extra = valor hora * 1.5
+  - monto = horas extra * valor hora extra
+  - 240 y 1.5 son constantes del calculador (no son tablas). Se pueden
+    convertir en parametros si el negocio lo pide.
+
+Base para los aportes de ley:
+  - Es la suma de las lineas ASIGNACION que tengan afecta_base_ley = true.
+  - Incluye sueldo base, horas extra y los bonos marcados como afectos.
+  - Luego se aplica piso_base y tope_base del parametro vigente (si existen).
+  - Cada linea de ley guarda base_calculo, tasa_aplicada y parametro_id para
+    poder explicar el monto anos despues.
+
+Neto:
+  - Neto = total ASIGNACIONES - total DEDUCCIONES.
+  - Las lineas APORTE_PATRONAL son costo del patrono: NO suman al neto y se
+    reportan aparte.
+
+Conceptos recurrentes:
+  - MONTO_FIJO: se aplica el valor tal cual.
+  - PORCENTAJE_SALARIO: se aplica sobre el sueldo base del periodo (no sobre
+    el total de asignaciones). Se expresa como fraccion: 0.10 = 10%.
+  - Tienen vigente_desde/vigente_hasta; solo aplican si el periodo cae dentro.
+
+Novedades:
+  - Solo se registran en periodos BORRADOR.
+  - Deben traer cantidad o monto. Si hay cantidad y el concepto es de horas
+    extra, se usa la tarifa de hora extra; si no, el valor hora.
+  - Al procesar, las APROBADAS pasan a APLICADAS. Al anular el periodo,
+    vuelven a APROBADA.
+
+Prestamos:
+  - Interes SIMPLE PLANO: interes = monto * tasa; total = monto + interes.
+  - cuota = total / nro_cuotas. La ultima cuota absorbe el redondeo.
+  - La tasa se expresa como fraccion (0.10 = 10%).
+  - Vencimientos segun la frecuencia del contrato vigente:
+      SEMANAL     +7 dias por cuota
+      QUINCENAL   +15 dias por cuota
+      MENSUAL     +1 mes por cuota
+  - El saldo NO se guarda: es la suma de cuotas PENDIENTES.
+  - Al procesar, las cuotas usadas pasan a DESCONTADA. Al anular, vuelven a
+    PENDIENTE. Un prestamo sin cuotas pendientes pasa a PAGADO.
+
+Periodos y recibos:
+  - Estados: BORRADOR -> PROCESADO -> PAGADO.
+  - Un periodo PROCESADO o PAGADO es inmutable: no se registran horas ni
+    novedades de esos dias, no se vuelve a procesar y no se edita.
+  - Anular solo se permite desde PROCESADO (no desde PAGADO) y revierte todo.
+  - Hay un recibo por persona y periodo (unique en la BD).
+  - Pagar guarda fecha_pago, metodo_pago, cuenta (si hay principal) y
+    referencia; el periodo queda PAGADO.
+
+Fechas:
+  - Se manejan como texto YYYY-MM-DD. node-pg entrega DATE como Date a
+    medianoche local; por eso existe src/bo/Payroll/_fechas.js (aFechaISO) y
+    no se usa toISOString() a ciegas (en zonas con offset positivo devolveria
+    el dia anterior).
+
+Inmutabilidad y transacciones:
+  - procesar, pagar y anular usan db.transaction (BEGIN/COMMIT/ROLLBACK).
+  - Si algo falla a mitad de proceso, no quedan recibos a medias.
+
+
+9. LAS LEYES VENEZOLANAS MODELADAS
+---------------------------------
+
+El sistema NO trae las tasas escritas en el codigo. Trae un modelo configurable
+y, como ejemplo, la migracion 004 siembra estos parametros (vigentes desde
+2000-01-01, sin tope ni piso):
+
+  Codigo         Empleado   Patrono   Entidad / ley
+  SSO            4,00%      9,00%     IVSS - Ley del Seguro Social
+  PARO_FORZOSO   0,50%      2,00%     Regimen Prestacional de Empleo
+  VIVIENDA       1,00%      2,00%     BANAVIH - Ley de Vivienda y Habitat
+  INCES          0,00%      2,00%     INCES (solo patrono)
+
+Como se leen:
+  - SSO (Seguro Social Obligatorio): aporte del empleado y del patrono.
+  - Paro forzoso: aporte del empleado y del patrono.
+  - FAOV/Vivienda: aporte del empleado y del patrono (BANAVIH).
+  - INCES: solo aporte patronal; no se descuenta al empleado.
+  - Cada tipo tiene un concepto de deduccion y/o uno patronal. Si el concepto
+    no existe, esa linea no se genera.
+
+Que es configurable:
+  - tasa_empleado y tasa_patronal (fraccion, 0.04 = 4%).
+  - tope_base y piso_base (si la ley fija un maximo o minimo de base).
+  - vigente_desde / vigente_hasta / base_legal.
+  - El concepto de deduccion y el concepto patronal de cada tipo.
+
+Cuando cambie la ley:
+  - NO se edita la fila vieja: se le pone vigente_hasta y se crea una nueva
+    con vigente_desde. Los recibos viejos conservan la tasa que usaron porque
+    guardan parametro_id, base_calculo y tasa_aplicada.
+
+ADVERTENCIA IMPORTANTE:
+  Este es un proyecto academico. Las tasas sembradas son un ejemplo de
+  referencia y pueden no coincidir con la Gaceta Oficial vigente ni con los
+  topes en unidades de salario. Antes de usar esto en produccion, un contador
+  o especialista laboral debe cargar los parametros reales en
+  parametro_aporte_ley. El sistema no da asesoria legal ni fiscal.
+
+
+10. EJEMPLO NUMERICO COMPLETO (EL MISMO DEL E2E)
+------------------------------------------------
+
+Caso: empleado POR_HORA, valor hora 10.00, frecuencia SEMANAL.
+Periodo: 2031-03-03 a 2031-03-09.
+Horas: 40 normales + 5 extra en un dia. Bono recurrente fijo de 100.00.
+Afiliado a SSO, PARO_FORZOSO y VIVIENDA.
+Prestamo: 100.00 al 10% en 2 cuotas (interes simple plano).
+
+Asignaciones:
+  SUELDO_BASE    40 * 10.00                    = 400.00
+  HORA_EXTRA     5 * (10.00 * 1.5)             =  75.00
+  BONO           recurrente fijo               = 100.00
+  TOTAL ASIGNACIONES                           = 575.00
+
+Base de ley = 575.00 (el bono afecta la base en el seed).
+Deducciones del empleado:
+  SSO            575.00 * 4,0%                 =  23.00
+  PARO_FORZOSO   575.00 * 0,5%                 =   2.88  (2.875 redondeado)
+  FAOV           575.00 * 1,0%                 =   5.75
+  CUOTA_PRESTAMO (100 + 10) / 2                =  55.00
+  TOTAL DEDUCCIONES                            =  86.63
+
+NETO = 575.00 - 86.63 = 488.37
+
+Aportes del patrono (no afectan el neto):
+  SSO_PATRONAL           575.00 * 9,0%         =  51.75
+  PARO_FORZOSO_PATRONAL  575.00 * 2,0%         =  11.50
+  FAOV_PATRONAL          575.00 * 2,0%         =  11.50
+  Costo adicional del patrono                  =  74.75
+
+El E2E verifica exactamente estos valores: 575.00, 86.63 y 488.37.
+
+
+11. COMO LEVANTAR EL BACKEND Y COMO PROBARLO
+--------------------------------------------
+
+Requisitos:
+  Node.js moderno (el proyecto usa ESM y fetch), pnpm 12.10.1, PostgreSQL
+  (Neon en la nube o local).
+
+Variables de entorno principales (.env, NO se versiona):
+  PORT                  puerto HTTP (3000 por defecto)
+  DATABASE_URL          cadena de conexion (obligatoria)
+  DATABASE_SSL          true (por defecto), false (local sin SSL) o
+                        no-verify (escape de ultimo recurso)
+  SESSION_SECRET        firma la cookie de sesion (obligatoria en produccion)
+  JWT_SECRET            firma el access token (obligatoria en produccion,
+                        >= 32 caracteres)
+  ACCESS_TOKEN_TTL      duracion del access token (15m por defecto)
+  REFRESH_TOKEN_TTL_DIAS duracion del refresh token (7 por defecto)
+  FRONTEND_URLS         origenes permitidos por CORS, separados por coma
+  LOGIN_MAX_ATTEMPTS, LOGIN_BLOCK_MINUTES, LOGIN_FAIL_DELAY_MS
+                        bloqueo y retardo del login
+
+Instalacion y arranque:
+  pnpm install
+  pnpm run dev      (nodemon, desarrollo)
+  pnpm start        (produccion)
+
+Base de datos (en un branch nuevo de Neon, nunca produccion):
+  export DATABASE_URL='postgresql://...'
+  ./scripts/db-setup.sh --with-test-user
+
+  Eso aplica: init si falta -> seed-seguridad -> 001 a 005 -> usuario de
+  prueba. En Windows se corre desde Git Bash o WSL, o se pegan los .sql en el
+  editor SQL de Neon en ese mismo orden.
+
+Pruebas automatizadas (no necesitan base de datos):
+  pnpm test
+  Hoy son 69 pruebas: sesion, seguridad, permisos, descubrimiento, login,
+  contrasenas, calculador de nomina, etc.
+
+Prueba de punta a punta (SI escribe en la base; usar branch desechable):
+  node scripts/manual/payroll_e2e.mjs --yes
+
+  Que hace: login admin -> alta de empleado con contrato -> afiliaciones ->
+  bono recurrente -> horas -> prestamo -> periodo -> procesar -> verificar
+  montos -> pagar -> el empleado ve su recibo -> verifica que NO puede
+  procesar -> limpia sus datos. Al final imprime "PAYROLL E2E OK".
+
+Usuario de prueba:
+  admin_prueba / Password123 (solo desarrollo; lo crea
+  db/seed-usuario-prueba.sql y db-setup.sh lo omite sin --with-test-user).
+
+
+12. ESTADO ACTUAL Y PENDIENTES
+------------------------------
+
+Hecho:
+  - Sesion, login con bcrypt, bloqueo por intentos y JWT con refresh rotativo.
+  - POST /api/execute con el orden de seguridad correcto.
+  - Esquema de seguridad completo y mapas de permisos en memoria.
+  - Subsistema Payroll: 8 BO, 33 metodos, calculador con decimal.js y
+    migraciones 004/005.
+  - Pruebas: 69/69 en verde.
+  - Script E2E por HTTP con limpieza de datos.
+  - Guia y documentacion.
+
+Pendiente:
+  - Aplicar 004 y 005 en un branch de Neon y correr el E2E. La credencial que
+    esta en .env hoy responde "password authentication failed"; los pasos para
+    el socio estan en PENDIENTE-SOCIO.txt.
+  - Refrescar el diagrama de arquitectura (archify) y el grafo (graphify).
+  - Fase 5: front (login, menu desde el servidor, componentes ui-*).
+  - Migrar las consultas viejas de src/queries/queries.yaml a los BO.
+  - Endurecer validaciones y bitacora de eventos para la defensa.
+
+Recordatorio: si el codigo y el diagrama difieren, la tarea no esta cerrada.
+
+
+13. ERRORES COMUNES Y COMO INTERPRETARLOS
+-----------------------------------------
+
+"password authentication failed for user ..."
+  La DATABASE_URL no es valida o la clave fue rotada. Revisar el branch de
+  Neon y la cadena pooled.
+
+401 vs 403:
+  401 = no hay sesion (o la sesion ya no es valida).
+  403 = hay sesion, pero el perfil no tiene el permiso, la cuenta esta
+  inactiva o debe cambiar la clave.
+
+501 "Metodo no encontrado" o "Objeto de negocio no encontrado":
+  El nombre en la BD no coincide EXACTAMENTE con la clase/archivo/metodo, o
+  falta sembrar el metodo/permiso. Los nombres son la llave del mapa.
+
+409 al procesar:
+  El periodo no esta en BORRADOR, ya existe un periodo con esas fechas, o hay
+  datos que impiden la operacion. Revisar el estado.
+
+"Ya existe..." (409):
+  Restriccion unica de la BD (cedula, email, username, persona+fecha,
+  persona+periodo). No es un bug.
+
+Sumas raras de dinero:
+  Seguramente se sumaron DECIMAL como texto. Usar decimal.js o los metodos
+  del calculador (sumar, multiplicar, redondear).
+
+Fechas corridas un dia:
+  Se uso toISOString() sobre un DATE de node-pg. Usar aFechaISO().
+
+Cookie que "no viaja":
+  El front debe usar credentials: "include" y el origen debe estar en
+  FRONTEND_URLS. Sin eso, el navegador no manda la cookie de sesion.
+
+Error 23503 vs 23001:
+  23503 es foreign_key_violation; 23001 es restrict_violation (ON DELETE
+  RESTRICT). Se manejan ambos al traducir errores.
+
+Error de import de decimal.js:
+  Falta correr pnpm install despues de actualizar el repo (se agrego
+  decimal.js como dependencia).
+
+
+14. PREGUNTAS FRECUENTES
+------------------------
+
+¿Como aumento el salario de una persona?
+  Se inserta una fila NUEVA en contrato_salario con vigente_desde (y se cierra
+  la anterior con vigente_hasta si corresponde). No se edita el historial.
+
+¿Como cambio una tasa de ley?
+  Se cierra el parametro viejo con vigente_hasta y se crea uno nuevo con
+  vigente_desde. Los recibos viejos no cambian.
+
+¿Como agrego un bono mensual fijo?
+  Payroll/Concept/asignarRecurrente con tipo_valor MONTO_FIJO. Si es puntual,
+  se registra como Novedad del periodo.
+
+¿Como agrego una deduccion opcional?
+  Se usa el concepto DESCUENTO_OPCIONAL con asignarRecurrente o una Novedad.
+
+¿Por que el saldo del prestamo no esta en una columna?
+  Porque un campo calculado guardado se desincroniza. Se calcula sumando las
+  cuotas PENDIENTES (Loan/saldos).
+
+¿Que pasa si anulo un periodo?
+  Solo si esta PROCESADO (no PAGADO). Se devuelven las cuotas a PENDIENTE, las
+  novedades a APROBADA, se borran los recibos y el periodo vuelve a BORRADOR.
+
+¿Se puede usar en produccion tal cual?
+  El nucleo si, pero antes hay que cargar tasas/topes reales, definir secretos,
+  usar un store de sesiones persistente (hoy es memoria) y correr el E2E en un
+  entorno de prueba. Para el proyecto final alcanza con lo que hay.
+
+¿Donde veo todo el detalle historico de decisiones?
+  En AGENTS.md (decisiones y aprendizajes), MEMORY.md (snapshot corto) y
+  docs/bitacora.md (historial por fase). Esos archivos son de desarrollo; esta
+  guia y docs-publicas/ son la parte explicativa para entregar.
+
+Fin de la guia.

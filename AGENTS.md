@@ -69,6 +69,20 @@ token en `Security.executeMethod` y revocación de familia en `logout`.
 `src/services/TokenService.js` y `src/bo/Session/Token.js` existen; la clase
 `Token`/método `refresh` está sembrada en `db/seed-seguridad.sql` (perfil
 `Publico`).
+**Subsistema `Payroll` (nómina) implementado (2026-11-08):** 8 BO en
+`src/bo/Payroll/` (`Cargo`, `Hours`, `Affiliation`, `Concept`, `Novedad`,
+`Loan`, `Period`, `Receipt`) con consultas propias en
+`src/bo/Payroll/queries.yaml`; `src/services/PayrollCalculator.js`
+(`decimal.js`, 240 h/mes, extra ×1.5, prorrateo por frecuencia, cuotas con
+interés simple plano). La migración `db/migrations/004_payroll.sql` agrega
+`registro_horas`, `cargo.valor_hora_base`, conceptos, aportes de ley,
+clases/métodos/permisos y menú; la `005_listar_personas.sql` agrega
+`Security/User/listarPersonas` (RRHH necesita el `persona_id`). Pruebas del
+calculador en `test/payrollCalculator.test.js` (69/69) y verificación E2E en
+`scripts/manual/payroll_e2e.mjs`. **Falta aplicar 004/005 en un branch de
+Neon y correr el E2E**; los pasos para el socio están en
+`PENDIENTE-SOCIO.txt`.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
 consultas de `queries.yaml` a los BO.
 
