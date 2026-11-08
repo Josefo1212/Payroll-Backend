@@ -79,10 +79,14 @@ else
   aplicar "db/init.sql"
 fi
 
+# --- Semilla de seguridad ---------------------------------------------------
+# Va ANTES de las migraciones: crea los perfiles a los que las migraciones
+# (001–005) les asignan permisos. Es idempotente, así que se aplica siempre.
+aplicar "db/seed-seguridad.sql"
+
 # --- Migraciones (cambios posteriores sobre una base con datos) -------------
-# Formato NNN_nombre.sql, número primero. Hoy la carpeta está vacía: el esquema
-# base vive completo en db/init.sql. Se aplican en orden de nombre (el prefijo
-# numérico lo garantiza). Idempotentes por diseño (IF NOT EXISTS en cada una).
+# Formato NNN_nombre.sql, número primero. Se aplican en orden de nombre (el
+# prefijo numérico lo garantiza). Idempotentes por diseño.
 if compgen -G "$RAIZ/db/migrations/[0-9]*.sql" >/dev/null; then
   while IFS= read -r ruta; do
     aplicar "db/migrations/$(basename "$ruta")"
@@ -91,11 +95,8 @@ else
   echo "Sin migraciones pendientes (db/migrations/ sin NNN_*.sql)."
 fi
 
-# --- Seeds ------------------------------------------------------------------
-# db/seed-seguridad.sql es idempotente y crea subsistemas, clases, métodos,
-# perfiles y sus permisos, así que se aplica siempre. El usuario de prueba solo
-# con --with-test-user.
-aplicar "db/seed-seguridad.sql"
+# --- Usuario de prueba (solo desarrollo) ------------------------------------
+# El usuario de prueba solo con --with-test-user.
 
 if [[ "$CON_TEST_USER" == true ]]; then
   echo "Con --with-test-user: se agrega el usuario de prueba (solo desarrollo)."
