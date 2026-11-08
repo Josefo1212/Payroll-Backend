@@ -1,0 +1,572 @@
+# Consultas del subsistema Payroll
+
+# ---------------------------------------------------------------------------
+# Sesión / alcance
+# ---------------------------------------------------------------------------
+findPersonaByUsuario: |
+  SELECT persona_id
+  FROM usuario
+  WHERE id = $1
+
+# ---------------------------------------------------------------------------
+# Cargo
+# ---------------------------------------------------------------------------
+findAllCargosTarifa: |
+  SELECT id, nombre, descripcion, valor_hora_base, activo
+  FROM cargo
+  WHERE activo
+  ORDER BY nombre
+
+findCargoById: |
+  SELECT id, nombre, valor_hora_base, activo
+  FROM cargo
+  WHERE id = $1
+
+updateCargoValorHora: |
+  UPDATE cargo
+     SET valor_hora_base = $1
+   WHERE id = $2
+   RETURNING id, nombre, valor_hora_base
+
+# ---------------------------------------------------------------------------
+# Registro de horas
+# ---------------------------------------------------------------------------
+findPeriodoNoBorradorPorFecha: |
+  SELECT id, estado
+  FROM periodo_nomina
+  WHERE estado <> 'BORRADOR'
+    AND $1::date BETWEEN fecha_inicio AND fecha_fin
+  LIMIT 1
+
+findRegistroHorasById: |
+  SELECT id, persona_id, fecha
+  FROM registro_horas
+  WHERE id = $1
+
+insertRegistroHoras: |
+  INSERT INTO registro_horas
+    (persona_id, fecha, horas_normales, horas_extra, observacion, registrado_por)
+  VALUES ($1, $2, $3, $4, $5, $6)
+  RETURNING id, persona_id, fecha, horas_normales, horas_extra, observacion, created_at
+
+findHorasPorPersona: |
+  SELECT rh.id, rh.persona_id, rh.fecha, rh.horas_normales, rh.horas_extra,
+         rh.observacion, rh.created_at
+  FROM registro_horas rh
+  WHERE rh.persona_id = $1
+    AND rh.fecha BETWEEN $2 AND $3
+  ORDER BY rh.fecha
+
+findHorasPorPeriodo: |
+  SELECT rh.id, rh.persona_id, rh.fecha, rh.horas_normales, rh.horas_extra,
+         rh.observacion, rh.created_at,
+         p.cedula, p.primer_nombre, p.primer_apellido
+  FROM registro_horas rh
+  JOIN persona p ON p.id = rh.persona_id
+  WHERE rh.fecha BETWEEN $1 AND $2
+  ORDER BY rh.fecha, p.primer_apellido, p.primer_nombre
+
+sumaHorasPorPersonaPeriodo: |
+  SELECT COALESCE(SUM(horas_normales), 0) AS horas_normales,
+         COALESCE(SUM(horas_extra), 0) AS horas_extra
+  FROM registro_horas
+  WHERE persona_id = $1
+    AND fecha BETWEEN $2 AND $3
+
+deleteRegistroHoras: |
+  DELETE FROM registro_horas
+  WHERE id = $1
+  RETURNING id
+
+# ---------------------------------------------------------------------------
+# Conceptos y recurrentes
+# ---------------------------------------------------------------------------
+findAllConceptos: |
+  SELECT id, codigo, nombre_concepto, tipo_concepto, categoria, unidad,
+         afecta_base_ley, activo
+  FROM concepto
+  WHERE activo
+  ORDER BY codigo
+
+findConceptoById: |
+  SELECT id, codigo, nombre_concepto, tipo_concepto, categoria, unidad,
+         afecta_base_ley, activo
+  FROM concepto
+  WHERE id = $1
+
+findConceptoByCodigo: |
+  SELECT id, codigo, nombre_concepto, tipo_concepto, categoria, unidad,
+         afecta_base_ley, activo
+  FROM concepto
+  WHERE codigo = $1
+
+insertConceptoPersona: |
+  INSERT INTO concepto_persona
+    (persona_id, concepto_id, tipo_valor, valor, vigente_desde, vigente_hasta, observacion)
+  VALUES ($1, $2, $3, $4, $5, $6, $7)
+  RETURNING id, persona_id, concepto_id, tipo_valor, valor,
+            vigente_desde, vigente_hasta, observacion
+
+findConceptoPersonaById: |
+  SELECT id, persona_id, concepto_id, tipo_valor, valor,
+         vigente_desde, vigente_hasta, observacion
+  FROM concepto_persona
+  WHERE id = $1
+
+closeConceptoPersona: |
+  UPDATE concepto_persona
+     SET vigente_hasta = $2
+   WHERE id = $1
+     AND vigente_hasta IS NULL
+  RETURNING id
+
+listarRecurrentesPorPersona: |
+  SELECT cp.id, cp.persona_id, cp.concepto_id, cp.tipo_valor, cp.valor,
+         cp.vigente_desde, cp.vigente_hasta, cp.observacion,
+         co.codigo, co.nombre_concepto, co.tipo_concepto, co.categoria,
+         co.unidad, co.afecta_base_ley
+  FROM concepto_persona cp
+  JOIN concepto co ON co.id = cp.concepto_id
+  WHERE cp.persona_id = $1
+  ORDER BY co.codigo, cp.vigente_desde DESC
+
+findRecurrentesVigentesPorPersona: |
+  SELECT cp.id, cp.persona_id, cp.concepto_id, cp.tipo_valor, cp.valor,
+         cp.vigente_desde, cp.vigente_hasta,
+         co.codigo, co.nombre_concepto, co.tipo_concepto, co.categoria,
+         co.unidad, co.afecta_base_ley
+  FROM concepto_persona cp
+  JOIN concepto co ON co.id = cp.concepto_id
+  WHERE cp.persona_id = $1
+    AND co.activo
+    AND cp.vigente_desde <= $3
+    AND (cp.vigente_hasta IS NULL OR cp.vigente_hasta >= $2)
+  ORDER BY cp.id
+
+# ---------------------------------------------------------------------------
+# Novedades
+# ---------------------------------------------------------------------------
+insertNovedad: |
+  INSERT INTO novedad
+    (persona_id, concepto_id, periodo_nomina_id, fecha, cantidad, monto,
+     estado, observacion, registrado_por)
+  VALUES ($1, $2, $3, $4, $5, $6, 'PENDIENTE', $7, $8)
+  RETURNING id, persona_id, concepto_id, periodo_nomina_id, fecha,
+            cantidad, monto, estado, observacion, created_at
+
+findNovedadById: |
+  SELECT id, persona_id, concepto_id, periodo_nomina_id, fecha,
+         cantidad, monto, estado, observacion
+  FROM novedad
+  WHERE id = $1
+
+aprobarNovedad: |
+  UPDATE novedad
+     SET estado = 'APROBADA',
+         aprobado_por = $2
+   WHERE id = $1
+     AND estado = 'PENDIENTE'
+  RETURNING id, estado
+
+rechazarNovedad: |
+  UPDATE novedad
+     SET estado = 'RECHAZADA',
+         aprobado_por = $2
+   WHERE id = $1
+     AND estado = 'PENDIENTE'
+  RETURNING id, estado
+
+findNovedadesPorPeriodo: |
+  SELECT n.id, n.persona_id, n.concepto_id, n.periodo_nomina_id, n.fecha,
+         n.cantidad, n.monto, n.estado, n.observacion,
+         p.cedula, p.primer_nombre, p.primer_apellido,
+         co.codigo, co.nombre_concepto, co.tipo_concepto, co.categoria, co.unidad
+  FROM novedad n
+  JOIN persona p ON p.id = n.persona_id
+  JOIN concepto co ON co.id = n.concepto_id
+  WHERE n.periodo_nomina_id = $1
+  ORDER BY p.primer_apellido, p.primer_nombre, n.fecha
+
+findNovedadesAprobadasPorPersona: |
+  SELECT n.id, n.concepto_id, n.cantidad, n.monto, n.fecha,
+         co.codigo, co.nombre_concepto, co.tipo_concepto, co.categoria,
+         co.unidad, co.afecta_base_ley
+  FROM novedad n
+  JOIN concepto co ON co.id = n.concepto_id
+  WHERE n.persona_id = $1
+    AND n.periodo_nomina_id = $2
+    AND n.estado = 'APROBADA'
+  ORDER BY n.fecha
+
+marcarNovedadesAplicadas: |
+  UPDATE novedad
+     SET estado = 'APLICADA'
+   WHERE periodo_nomina_id = $1
+     AND persona_id = $2
+     AND estado = 'APROBADA'
+  RETURNING id
+
+revertirNovedadesAplicadas: |
+  UPDATE novedad
+     SET estado = 'APROBADA'
+   WHERE periodo_nomina_id = $1
+     AND estado = 'APLICADA'
+  RETURNING id
+
+# ---------------------------------------------------------------------------
+# Préstamos
+# ---------------------------------------------------------------------------
+insertPrestamo: |
+  INSERT INTO prestamo
+    (persona_id, fecha_otorgamiento, monto_total, nro_cuotas,
+     cuota_periodica, tasa_interes, estado, aprobado_por)
+  VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVO', $7)
+  RETURNING id, persona_id, fecha_otorgamiento, monto_total, nro_cuotas,
+            cuota_periodica, tasa_interes, estado, created_at
+
+insertCuotaPrestamo: |
+  INSERT INTO cuota_prestamo
+    (prestamo_id, nro_cuota, fecha_vencimiento, monto_capital, monto_interes, monto_cuota)
+  VALUES ($1, $2, $3, $4, $5, $6)
+  RETURNING id
+
+findPrestamoById: |
+  SELECT id, persona_id, fecha_otorgamiento, monto_total, nro_cuotas,
+         cuota_periodica, tasa_interes, estado, created_at
+  FROM prestamo
+  WHERE id = $1
+
+findPrestamosPorPersona: |
+  SELECT id, persona_id, fecha_otorgamiento, monto_total, nro_cuotas,
+         cuota_periodica, tasa_interes, estado, created_at
+  FROM prestamo
+  WHERE persona_id = $1
+  ORDER BY fecha_otorgamiento DESC
+
+findCuotasPorPrestamo: |
+  SELECT id, prestamo_id, nro_cuota, fecha_vencimiento, monto_capital,
+         monto_interes, monto_cuota, estado
+  FROM cuota_prestamo
+  WHERE prestamo_id = $1
+  ORDER BY nro_cuota
+
+saldoPrestamo: |
+  SELECT COUNT(*) AS cuotas_pendientes,
+         COALESCE(SUM(monto_cuota), 0) AS saldo_pendiente
+  FROM cuota_prestamo
+  WHERE prestamo_id = $1
+    AND estado = 'PENDIENTE'
+
+contarCuotasDescontadas: |
+  SELECT COUNT(*) AS descontadas
+  FROM cuota_prestamo
+  WHERE prestamo_id = $1
+    AND estado = 'DESCONTADA'
+
+anularPrestamo: |
+  UPDATE prestamo
+     SET estado = 'ANULADO'
+   WHERE id = $1
+     AND estado IN ('SOLICITADO', 'ACTIVO')
+  RETURNING id, estado
+
+marcarPrestamoPagado: |
+  UPDATE prestamo
+     SET estado = 'PAGADO'
+   WHERE id = $1
+  RETURNING id
+
+findCuotasPendientesPorPersona: |
+  SELECT cp.id, cp.prestamo_id, cp.nro_cuota, cp.fecha_vencimiento,
+         cp.monto_capital, cp.monto_interes, cp.monto_cuota
+  FROM cuota_prestamo cp
+  JOIN prestamo pr ON pr.id = cp.prestamo_id
+  WHERE pr.persona_id = $1
+    AND pr.estado = 'ACTIVO'
+    AND cp.estado = 'PENDIENTE'
+    AND cp.fecha_vencimiento <= $2
+  ORDER BY cp.fecha_vencimiento, cp.nro_cuota
+
+marcarCuotaDescontada: |
+  UPDATE cuota_prestamo
+     SET estado = 'DESCONTADA'
+   WHERE id = $1
+     AND estado = 'PENDIENTE'
+  RETURNING id
+
+revertirCuotasDelPeriodo: |
+  UPDATE cuota_prestamo
+     SET estado = 'PENDIENTE'
+   WHERE id IN (
+     SELECT d.cuota_prestamo_id
+     FROM detalle_recibo d
+     JOIN recibo_pago r ON r.id = d.recibo_pago_id
+     WHERE r.periodo_nomina_id = $1
+       AND d.cuota_prestamo_id IS NOT NULL
+   )
+  RETURNING id
+
+# ---------------------------------------------------------------------------
+# Períodos
+# ---------------------------------------------------------------------------
+insertPeriodo: |
+  INSERT INTO periodo_nomina
+    (fecha_inicio, fecha_fin, frecuencia, estado, descripcion)
+  VALUES ($1, $2, $3, 'BORRADOR', $4)
+  RETURNING id, fecha_inicio, fecha_fin, frecuencia, estado, descripcion,
+            procesado_por, fecha_proceso, created_at
+
+findPeriodoById: |
+  SELECT id, fecha_inicio, fecha_fin, frecuencia, estado, descripcion,
+         procesado_por, fecha_proceso, created_at
+  FROM periodo_nomina
+  WHERE id = $1
+
+findPeriodoPorFechas: |
+  SELECT id, fecha_inicio, fecha_fin, frecuencia, estado
+  FROM periodo_nomina
+  WHERE frecuencia = $1
+    AND fecha_inicio = $2
+    AND fecha_fin = $3
+
+listarPeriodos: |
+  SELECT id, fecha_inicio, fecha_fin, frecuencia, estado, descripcion,
+         procesado_por, fecha_proceso, created_at
+  FROM periodo_nomina
+  ORDER BY fecha_inicio DESC
+
+updatePeriodoEstado: |
+  UPDATE periodo_nomina
+     SET estado = $2,
+         procesado_por = COALESCE($3, procesado_por),
+         fecha_proceso = COALESCE($4, fecha_proceso)
+   WHERE id = $1
+  RETURNING id, estado, procesado_por, fecha_proceso
+
+findContratosVigentesPorFrecuencia: |
+  SELECT c.id AS contrato_id, c.persona_id, c.cargo_id, c.tipo_pago,
+         c.frecuencia_pago, c.horas_semanales, c.fecha_inicio, c.fecha_fin,
+         p.cedula, p.primer_nombre, p.primer_apellido,
+         cs.monto AS monto_salario
+  FROM contrato c
+  JOIN persona p ON p.id = c.persona_id
+  LEFT JOIN LATERAL (
+    SELECT cs.monto
+    FROM contrato_salario cs
+    WHERE cs.contrato_id = c.id
+      AND cs.vigente_desde <= $2
+      AND (cs.vigente_hasta IS NULL OR cs.vigente_hasta >= $1)
+    ORDER BY cs.vigente_desde DESC
+    LIMIT 1
+  ) cs ON true
+  WHERE c.estado = 'VIGENTE'
+    AND c.frecuencia_pago = $3
+    AND c.fecha_inicio <= $2
+    AND (c.fecha_fin IS NULL OR c.fecha_fin >= $1)
+    AND p.estado = 'ACTIVO'
+  ORDER BY p.primer_apellido, p.primer_nombre
+
+findAfiliacionesVigentesPorPersona: |
+  SELECT a.tipo_aporte_id, t.codigo, t.nombre,
+         t.concepto_deduccion_id, t.concepto_patronal_id,
+         pa.id AS parametro_id, pa.tasa_empleado, pa.tasa_patronal,
+         pa.tope_base, pa.piso_base
+  FROM afiliacion_ley a
+  JOIN tipo_aporte_ley t ON t.id = a.tipo_aporte_id
+  JOIN LATERAL (
+    SELECT p.id, p.tasa_empleado, p.tasa_patronal, p.tope_base, p.piso_base
+    FROM parametro_aporte_ley p
+    WHERE p.tipo_aporte_id = a.tipo_aporte_id
+      AND p.vigente_desde <= $2
+      AND (p.vigente_hasta IS NULL OR p.vigente_hasta >= $1)
+    ORDER BY p.vigente_desde DESC
+    LIMIT 1
+  ) pa ON true
+  WHERE a.persona_id = $3
+    AND a.estado = 'ACTIVO'
+    AND (a.fecha_baja IS NULL OR a.fecha_baja >= $2)
+
+insertRecibo: |
+  INSERT INTO recibo_pago
+    (persona_id, periodo_nomina_id, contrato_id, fecha_emision,
+     total_asignaciones, total_deducciones, monto_total, estado)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDIENTE')
+  RETURNING id, persona_id, periodo_nomina_id, total_asignaciones,
+            total_deducciones, monto_total, estado
+
+insertDetalleRecibo: |
+  INSERT INTO detalle_recibo
+    (recibo_pago_id, concepto_id, cuota_prestamo_id, novedad_id,
+     concepto_persona_id, parametro_aporte_id, base_calculo,
+     tasa_aplicada, cantidad_unidades, monto)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+  RETURNING id
+
+pagarRecibosPeriodo: |
+  UPDATE recibo_pago r
+     SET estado = 'PAGADO',
+         fecha_pago = $2,
+         metodo_pago = $3,
+         cuenta_bancaria_id = COALESCE(
+           $4,
+           (SELECT cb.id
+              FROM cuenta_bancaria cb
+             WHERE cb.persona_id = r.persona_id
+               AND cb.es_principal
+               AND cb.activa
+             LIMIT 1)
+         ),
+         referencia_pago = $5,
+         pagado_por = $6
+   WHERE r.periodo_nomina_id = $1
+     AND r.estado = 'PENDIENTE'
+  RETURNING id
+
+deleteDetallesPorPeriodo: |
+  DELETE FROM detalle_recibo
+   WHERE recibo_pago_id IN (
+     SELECT id FROM recibo_pago WHERE periodo_nomina_id = $1
+   )
+
+deleteRecibosPorPeriodo: |
+  DELETE FROM recibo_pago
+   WHERE periodo_nomina_id = $1
+  RETURNING id
+
+findRecibosPorPeriodo: |
+  SELECT r.id, r.persona_id, r.periodo_nomina_id, r.contrato_id,
+         r.fecha_emision, r.total_asignaciones, r.total_deducciones,
+         r.monto_total, r.estado, r.fecha_pago, r.metodo_pago,
+         r.referencia_pago,
+         p.cedula, p.primer_nombre, p.primer_apellido
+  FROM recibo_pago r
+  JOIN persona p ON p.id = r.persona_id
+  WHERE r.periodo_nomina_id = $1
+  ORDER BY p.primer_apellido, p.primer_nombre
+
+# ---------------------------------------------------------------------------
+# Recibos
+# ---------------------------------------------------------------------------
+findReciboPorId: |
+  SELECT r.id, r.persona_id, r.periodo_nomina_id, r.contrato_id,
+         r.fecha_emision, r.total_asignaciones, r.total_deducciones,
+         r.monto_total, r.estado, r.fecha_pago, r.metodo_pago,
+         r.cuenta_bancaria_id, r.referencia_pago, r.pagado_por,
+         p.cedula, p.primer_nombre, p.primer_apellido,
+         pn.fecha_inicio, pn.fecha_fin, pn.frecuencia
+  FROM recibo_pago r
+  JOIN persona p ON p.id = r.persona_id
+  JOIN periodo_nomina pn ON pn.id = r.periodo_nomina_id
+  WHERE r.id = $1
+
+findDetallePorRecibo: |
+  SELECT d.id, d.recibo_pago_id, d.concepto_id, d.cuota_prestamo_id,
+         d.novedad_id, d.concepto_persona_id, d.parametro_aporte_id,
+         d.base_calculo, d.tasa_aplicada, d.cantidad_unidades, d.monto,
+         co.codigo, co.nombre_concepto, co.tipo_concepto, co.categoria, co.unidad
+  FROM detalle_recibo d
+  JOIN concepto co ON co.id = d.concepto_id
+  WHERE d.recibo_pago_id = $1
+  ORDER BY
+    CASE co.tipo_concepto
+      WHEN 'ASIGNACION' THEN 1
+      WHEN 'DEDUCCION' THEN 2
+      WHEN 'APORTE_PATRONAL' THEN 3
+      ELSE 4
+    END,
+    co.codigo
+
+findRecibosPorPersona: |
+  SELECT r.id, r.persona_id, r.periodo_nomina_id, r.contrato_id,
+         r.fecha_emision, r.total_asignaciones, r.total_deducciones,
+         r.monto_total, r.estado, r.fecha_pago, r.metodo_pago,
+         r.referencia_pago,
+         pn.fecha_inicio, pn.fecha_fin, pn.frecuencia
+  FROM recibo_pago r
+  JOIN periodo_nomina pn ON pn.id = r.periodo_nomina_id
+  WHERE r.persona_id = $1
+    AND r.estado <> 'ANULADO'
+  ORDER BY r.fecha_emision DESC
+
+# ---------------------------------------------------------------------------
+# Apoyo al procesamiento
+# ---------------------------------------------------------------------------
+findContratoVigentePorPersona: |
+  SELECT c.id, c.frecuencia_pago
+  FROM contrato c
+  WHERE c.persona_id = $1
+    AND c.estado = 'VIGENTE'
+    AND c.fecha_inicio <= CURRENT_DATE
+    AND (c.fecha_fin IS NULL OR c.fecha_fin >= CURRENT_DATE)
+  ORDER BY c.fecha_inicio DESC
+  LIMIT 1
+
+marcarPrestamosPagados: |
+  UPDATE prestamo pr
+     SET estado = 'PAGADO'
+   WHERE pr.estado = 'ACTIVO'
+     AND NOT EXISTS (
+       SELECT 1
+       FROM cuota_prestamo cp
+       WHERE cp.prestamo_id = pr.id
+         AND cp.estado = 'PENDIENTE'
+     )
+  RETURNING id
+
+resetPeriodo: |
+  UPDATE periodo_nomina
+     SET estado = 'BORRADOR',
+         procesado_por = NULL,
+         fecha_proceso = NULL
+   WHERE id = $1
+  RETURNING id, estado
+
+reactivarPrestamosPorCuotasPendientes: |
+  UPDATE prestamo pr
+     SET estado = 'ACTIVO'
+   WHERE pr.estado = 'PAGADO'
+     AND EXISTS (
+       SELECT 1
+       FROM cuota_prestamo cp
+       WHERE cp.prestamo_id = pr.id
+         AND cp.estado = 'PENDIENTE'
+     )
+  RETURNING id
+
+# ---------------------------------------------------------------------------
+# Afiliaciones de ley
+# ---------------------------------------------------------------------------
+findTipoAporteById: |
+  SELECT id, codigo, nombre, entidad
+  FROM tipo_aporte_ley
+  WHERE id = $1
+
+insertAfiliacion: |
+  INSERT INTO afiliacion_ley
+    (persona_id, tipo_aporte_id, nro_afiliacion, fecha_inscripcion, estado)
+  VALUES ($1, $2, $3, $4, 'ACTIVO')
+  RETURNING id, persona_id, tipo_aporte_id, nro_afiliacion,
+            fecha_inscripcion, fecha_baja, estado
+
+listarAfiliacionesPorPersona: |
+  SELECT a.id, a.persona_id, a.tipo_aporte_id, a.nro_afiliacion,
+         a.fecha_inscripcion, a.fecha_baja, a.estado,
+         t.codigo, t.nombre, t.entidad
+  FROM afiliacion_ley a
+  JOIN tipo_aporte_ley t ON t.id = a.tipo_aporte_id
+  WHERE a.persona_id = $1
+  ORDER BY t.codigo
+
+findAfiliacionById: |
+  SELECT id, persona_id, tipo_aporte_id, nro_afiliacion,
+         fecha_inscripcion, fecha_baja, estado
+  FROM afiliacion_ley
+  WHERE id = $1
+
+darDeBajaAfiliacion: |
+  UPDATE afiliacion_ley
+     SET estado = 'BAJA',
+         fecha_baja = $2
+   WHERE id = $1
+     AND estado = 'ACTIVO'
+  RETURNING id, estado, fecha_baja
