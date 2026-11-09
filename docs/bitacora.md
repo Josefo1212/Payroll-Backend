@@ -208,3 +208,17 @@ es. Orden cronológico.
   --yes` **38/38 → PERMISOS E2E OK**, restaurando el estado inicial.
 - Diagrama `archify` refrescado (mención de la edición en caliente y de la
   guarda anti-bloqueo); grafo `graphify` regenerado.
+
+### Opciones de menú de Security completadas (2026-11-08)
+
+- La base viva tenía `registrar`, `Usuarios` y `Perfiles` (subsistema
+  `Security`) sin ningún `permiso_opcion`: el seed no se había aplicado
+  completo. Migración idempotente `db/migrations/007_opciones_security.sql`.
+- Los grants se alinearon con los métodos que cada perfil puede ejecutar
+  (la 003 le quitó `registrar` a `Administrador`, así que no se le muestra
+  esa opción): `registrar` → Superusuario/RRHH; `Usuarios` →
+  Superusuario/Administrador/RRHH; `Perfiles` → Superusuario/Administrador.
+  `Permisos` sigue exclusiva de Superusuario (006).
+- Incluye un `DELETE` defensivo para que reejecutar el seed no vuelva a
+  conceder opciones que el perfil no puede usar. Verificado: 30
+  `permiso_opcion` (22 de Payroll + 8 de Security), segunda corrida 0 filas.

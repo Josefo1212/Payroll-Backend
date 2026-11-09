@@ -95,6 +95,13 @@ Cada cambio se escribe primero en `permiso_metodo` y después actualiza
 (409). `pnpm test` 80/80 y `scripts/manual/permisos_e2e.mjs` 38/38 →
 `PERMISOS E2E OK`.
 
+**Opciones de menú de Security completadas (2026-11-08):** la migración
+`db/migrations/007_opciones_security.sql` concede `registrar`, `Usuarios` y
+`Perfiles` a los perfiles que pueden ejecutar sus métodos (el seed no había
+llegado completo a la base viva): `registrar` → Superusuario/RRHH;
+`Usuarios` → Superusuario/Administrador/RRHH; `Perfiles` →
+Superusuario/Administrador. `Permisos` sigue solo de Superusuario.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
 consultas de `queries.yaml` a los BO.
 
