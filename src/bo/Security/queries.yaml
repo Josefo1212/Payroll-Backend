@@ -300,7 +300,8 @@ contarOtrosSuperusuariosActivos: |
 # avisa antes de desactivarla). Se excluyen opciones de subsistemas inactivos:
 # no pueden aparecer en ningún menú.
 findAllOptionsAdmin: |
-  SELECT o.id, s.nombre AS subsistema, o.nombre AS opcion, o.descripcion,
+  SELECT o.id, s.id AS subsistema_id, s.nombre AS subsistema,
+         o.nombre AS opcion, o.descripcion,
          o.orden, o.activo,
          (COUNT(po.perfil_id) FILTER (WHERE pf.activo))::int AS perfiles
   FROM opcion o
@@ -356,7 +357,7 @@ updateOpcionActivo: |
 # Asignación perfil ↔ opción
 # ---------------------------------------------------------------------------
 findAllActiveOptions: |
-  SELECT o.id, s.nombre AS subsistema, o.nombre AS opcion,
+  SELECT o.id, s.id AS subsistema_id, s.nombre AS subsistema, o.nombre AS opcion,
          o.descripcion, o.orden
   FROM opcion o
   JOIN subsistema s ON s.id = o.subsistema_id

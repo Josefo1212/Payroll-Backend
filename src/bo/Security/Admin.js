@@ -730,6 +730,7 @@ export class Admin {
 
     return {
       id: fila.id,
+      subsistemaId: fila.subsistema_id,
       subsistema: fila.subsistema,
       nombre,
       descripcion: fila.descripcion,

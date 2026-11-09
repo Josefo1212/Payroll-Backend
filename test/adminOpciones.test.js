@@ -378,6 +378,7 @@ test("listarOpciones devuelve activas e inactivas con uso y protección", async 
   const usuarios = opciones.find((o) => o.nombre === "Usuarios");
   assert.deepEqual(usuarios, {
     id: 1,
+    subsistemaId: 1,
     subsistema: "Security",
     nombre: "Usuarios",
     descripcion: "Gestión de usuarios",
@@ -406,6 +407,7 @@ test("crearOpcion inserta una opción nueva sin permisos", async () => {
 
   assert.deepEqual(resultado, {
     id: 5,
+    subsistemaId: 2,
     subsistema: "Payroll",
     nombre: "Reportes",
     descripcion: "Reportes de nómina",
@@ -476,6 +478,7 @@ test("editarOpcion actualiza nombre, descripción y orden", async () => {
 
   assert.deepEqual(resultado, {
     id: 3,
+    subsistemaId: 2,
     subsistema: "Payroll",
     nombre: "PeriodoNuevo",
     descripcion: "Nuevo",
