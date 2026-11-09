@@ -36,6 +36,7 @@ const METODOS_CRITICOS = new Set([
   "Security/Admin/asignarPermisoMetodo",
   "Security/Admin/quitarPermisoMetodo",
   "Security/Admin/listarOpciones",
+  "Security/Admin/listarSubsistemas",
   "Security/Admin/crearOpcion",
   "Security/Admin/editarOpcion",
   "Security/Admin/cambiarEstadoOpcion",
@@ -168,6 +169,11 @@ export class Admin {
       asignado: false,
       yaNoEstaba: rowCount === 0,
     };
+  }
+
+  async listarSubsistemas() {
+    const { rows } = await this.#db.query(queries.findAllSubsistemasAdmin);
+    return rows;
   }
 
   async listarOpciones() {

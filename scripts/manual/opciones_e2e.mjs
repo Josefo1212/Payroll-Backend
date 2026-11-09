@@ -167,6 +167,21 @@ try {
   const payroll = catalogo.body.find((o) => o.subsistema === SUBSISTEMA_PAYROLL);
   check("subsistema Payroll en el catálogo", Boolean(payroll?.subsistemaId), true);
 
+  const subsistemas = await ejecutar(
+    cliente,
+    "Security",
+    "Admin",
+    "listarSubsistemas",
+  );
+  check("listarSubsistemas", subsistemas.status, 200);
+  check(
+    "incluye Security y Payroll con su id",
+    ["Security", SUBSISTEMA_PAYROLL].every((nombre) =>
+      subsistemas.body.some((s) => s.nombre === nombre && s.activo),
+    ),
+    true,
+  );
+
   // --- Perfil temporal ------------------------------------------------------
   const perfil = await ejecutar(cliente, "Security", "Admin", "crearPerfil", [
     PERFIL,

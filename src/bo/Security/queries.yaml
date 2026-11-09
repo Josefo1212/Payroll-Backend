@@ -299,6 +299,11 @@ contarOtrosSuperusuariosActivos: |
 # `perfiles` cuenta solo perfiles ACTIVOS que ven la opción (lo que el front
 # avisa antes de desactivarla). Se excluyen opciones de subsistemas inactivos:
 # no pueden aparecer en ningún menú.
+findAllSubsistemasAdmin: |
+  SELECT id, nombre, activo
+  FROM subsistema
+  ORDER BY nombre
+
 findAllOptionsAdmin: |
   SELECT o.id, s.id AS subsistema_id, s.nombre AS subsistema,
          o.nombre AS opcion, o.descripcion,

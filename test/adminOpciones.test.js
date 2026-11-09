@@ -126,6 +126,13 @@ function crearDbOpciones(estado) {
         return { rows, rowCount: rows.length };
       }
 
+      if (texto === queries.findAllSubsistemasAdmin) {
+        const rows = [...SUBSISTEMAS].sort((a, b) =>
+          a.nombre.localeCompare(b.nombre),
+        );
+        return { rows, rowCount: rows.length };
+      }
+
       if (texto === queries.findSubsistemaById) {
         const subsistema = subsistemaPorId(estado, params[0]);
         return subsistema
@@ -365,6 +372,16 @@ afterEach(() => {
   security.db = dbOriginal;
   security.PermissionMethodMap = mapaMetodosOriginal;
   security.PermissionOptionMap = mapaOpcionesOriginal;
+});
+
+test("listarSubsistemas devuelve los subsistemas con su id y estado", async () => {
+  const subsistemas = await admin.listarSubsistemas();
+
+  assert.deepEqual(subsistemas, [
+    { id: 2, nombre: "Payroll", activo: true },
+    { id: 1, nombre: "Security", activo: true },
+    { id: 3, nombre: "Viejo", activo: false },
+  ]);
 });
 
 test("listarOpciones devuelve activas e inactivas con uso y protección", async () => {
