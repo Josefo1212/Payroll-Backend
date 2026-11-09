@@ -291,3 +291,130 @@ contarOtrosSuperusuariosActivos: |
     AND pf.activo
     AND pf.nombre_perfil = 'Superusuario'
     AND u.id <> $1
+
+# ---------------------------------------------------------------------------
+# Catálogo de opciones de menú (Security/Admin)
+# ---------------------------------------------------------------------------
+# Incluye activas e inactivas: la vista de catálogo debe poder reactivar.
+# `perfiles` cuenta solo perfiles ACTIVOS que ven la opción (lo que el front
+# avisa antes de desactivarla). Se excluyen opciones de subsistemas inactivos:
+# no pueden aparecer en ningún menú.
+findAllOptionsAdmin: |
+  SELECT o.id, s.nombre AS subsistema, o.nombre AS opcion, o.descripcion,
+         o.orden, o.activo,
+         (COUNT(po.perfil_id) FILTER (WHERE pf.activo))::int AS perfiles
+  FROM opcion o
+  JOIN subsistema s ON s.id = o.subsistema_id
+  LEFT JOIN permiso_opcion po ON po.opcion_id = o.id
+  LEFT JOIN perfil pf ON pf.id = po.perfil_id
+  WHERE s.activo
+  GROUP BY o.id, s.nombre, o.nombre, o.descripcion, o.orden, o.activo
+  ORDER BY o.activo DESC, s.nombre, o.orden, o.nombre
+
+findOpcionById: |
+  SELECT o.id, o.activo,
+         s.id AS subsistema_id, s.nombre AS subsistema,
+         s.activo AS subsistema_activo,
+         o.nombre AS opcion, o.descripcion, o.orden
+  FROM opcion o
+  JOIN subsistema s ON s.id = o.subsistema_id
+  WHERE o.id = $1
+
+findOpcionByNombreEnSubsistema: |
+  SELECT id, nombre, activo
+  FROM opcion
+  WHERE subsistema_id = $1 AND LOWER(nombre) = LOWER($2)
+
+findOpcionByNombreEnSubsistemaExcepto: |
+  SELECT id, nombre, activo
+  FROM opcion
+  WHERE subsistema_id = $1 AND LOWER(nombre) = LOWER($2) AND id <> $3
+
+findSubsistemaById: |
+  SELECT id, nombre, activo
+  FROM subsistema
+  WHERE id = $1
+
+insertOpcion: |
+  INSERT INTO opcion (subsistema_id, nombre, descripcion, orden)
+  VALUES ($1, $2, $3, $4)
+  RETURNING id, nombre, descripcion, orden, activo
+
+updateOpcion: |
+  UPDATE opcion
+     SET nombre = $1, descripcion = $2, orden = $3
+   WHERE id = $4
+  RETURNING id, nombre, descripcion, orden, activo
+
+updateOpcionActivo: |
+  UPDATE opcion
+     SET activo = $1
+   WHERE id = $2
+  RETURNING id, nombre, descripcion, orden, activo
+
+# ---------------------------------------------------------------------------
+# Asignación perfil ↔ opción
+# ---------------------------------------------------------------------------
+findAllActiveOptions: |
+  SELECT o.id, s.nombre AS subsistema, o.nombre AS opcion,
+         o.descripcion, o.orden
+  FROM opcion o
+  JOIN subsistema s ON s.id = o.subsistema_id
+  WHERE o.activo AND s.activo
+  ORDER BY s.nombre, o.orden, o.nombre
+
+findPermisosOpcionPorPerfil: |
+  SELECT po.opcion_id
+  FROM permiso_opcion po
+  JOIN opcion o ON o.id = po.opcion_id
+  JOIN subsistema s ON s.id = o.subsistema_id
+  WHERE po.perfil_id = $1
+    AND o.activo AND s.activo
+  ORDER BY po.opcion_id
+
+insertPermisoOpcion: |
+  INSERT INTO permiso_opcion (perfil_id, opcion_id)
+  VALUES ($1, $2)
+  ON CONFLICT DO NOTHING
+  RETURNING perfil_id, opcion_id
+
+deletePermisoOpcion: |
+  DELETE FROM permiso_opcion
+  WHERE perfil_id = $1 AND opcion_id = $2
+  RETURNING perfil_id, opcion_id
+
+# ---------------------------------------------------------------------------
+# Clonación de permisos al crear un perfil (perfilPlantillaId opcional)
+# ---------------------------------------------------------------------------
+insertPermisosDesdePlantillaMetodo: |
+  INSERT INTO permiso_metodo (perfil_id, metodo_id)
+  SELECT $1, pm.metodo_id
+  FROM permiso_metodo pm
+  JOIN metodo m ON m.id = pm.metodo_id
+  JOIN clase c ON c.id = m.clase_id
+  JOIN subsistema s ON s.id = c.subsistema_id
+  WHERE pm.perfil_id = $2
+    AND m.activo AND c.activo AND s.activo
+  ON CONFLICT DO NOTHING
+  RETURNING metodo_id
+
+insertPermisosDesdePlantillaOpcion: |
+  INSERT INTO permiso_opcion (perfil_id, opcion_id)
+  SELECT $1, po.opcion_id
+  FROM permiso_opcion po
+  JOIN opcion o ON o.id = po.opcion_id
+  JOIN subsistema s ON s.id = o.subsistema_id
+  WHERE po.perfil_id = $2
+    AND o.activo AND s.activo
+  ON CONFLICT DO NOTHING
+  RETURNING opcion_id
+
+contarPermisosMetodoPerfil: |
+  SELECT COUNT(*)::int AS total
+  FROM permiso_metodo
+  WHERE perfil_id = $1
+
+contarPermisosOpcionPerfil: |
+  SELECT COUNT(*)::int AS total
+  FROM permiso_opcion
+  WHERE perfil_id = $1
