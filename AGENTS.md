@@ -106,17 +106,20 @@ Superusuario/Administrador. `Permisos` sigue solo de Superusuario.
 `Security/Admin` suma `listarPerfilesAdmin` (Superusuario y Administrador),
 `crearPerfil`, `editarPerfil` y `cambiarEstadoPerfil` (solo Superusuario);
 `Security/User` suma `establecerPerfilesUsuario` (solo Superusuario), que
-reemplaza el conjunto completo de perfiles de un usuario en una transacción.
-La migración `db/migrations/008_perfiles.sql` siembra los cinco métodos y sus
+reemplaza el conjunto completo de perfiles de un usuario en una transacción, y
+`listarPerfilesUsuario` (Superusuario y Administrador), que devuelve el
+conjunto actual con activos e inactivos. La migración
+`db/migrations/008_perfiles.sql` siembra los cinco métodos y sus
 permisos y corrige la descripción de la opción `Perfiles`; no hay cambio de
-esquema. Un perfil nuevo nace con 6 permisos base de sesión
+esquema. La `009_listar_perfiles_usuario.sql` agrega el método de lectura. Un
+perfil nuevo nace con 6 permisos base de sesión
 (`Session/Session/{logout,getSession,sessionExist}`, `Session/Token/refresh`,
 `Security/Menu/getOptions`, `Security/User/cambiarClave`). Dos guardas:
 escalada de privilegios (`403` si un no Superusuario intenta asignar
 `Superusuario`, `Administrador` o `GerenteRRHH`, en `registrar` y en
 `establecerPerfilesUsuario`) y anti-bloqueo (`409` si `Superusuario` se
 renombra/desactiva o si se quita al último superusuario activo). `pnpm test`
-100/100 y `scripts/manual/perfiles_e2e.mjs` 41/41 → `PERFILES E2E OK`.
+102/102 y `scripts/manual/perfiles_e2e.mjs` 43/43 → `PERFILES E2E OK`.
 
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
 consultas de `queries.yaml` a los BO.
@@ -450,7 +453,8 @@ se agrega una nueva que la reemplaza.
 - **Reemplazo del conjunto de perfiles, no pares agregar/quitar.**
   `establecerPerfilesUsuario` hace `DELETE` + `INSERT` en una transacción: el
   cliente manda el conjunto final y no puede quedar un estado intermedio con
-  dos peticiones concurrentes.
+  dos peticiones concurrentes. Para pintar ese conjunto antes de reemplazarlo
+  existe `listarPerfilesUsuario` (lectura, Superusuario y Administrador).
 - **Un perfil nuevo nace usable.** `crearPerfil` inserta el perfil y sus 6
   permisos base de sesión en la misma transacción. Sin ellos, un usuario con
   solo ese perfil no podría ni cerrar sesión ni cambiar su clave.

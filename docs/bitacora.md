@@ -229,9 +229,11 @@ es. Orden cronológico.
   Administrador), `crearPerfil`, `editarPerfil` y `cambiarEstadoPerfil` (solo
   Superusuario); `Security/User` suma `establecerPerfilesUsuario` (solo
   Superusuario), que reemplaza el conjunto completo en una transacción
-  (`DELETE` + `INSERT`). La migración idempotente
-  `db/migrations/008_perfiles.sql` siembra los cinco métodos, concede sus
-  permisos y corrige la descripción de la opción `Perfiles` a
+  (`DELETE` + `INSERT`), y `listarPerfilesUsuario` (Superusuario y
+  Administrador), que lee el conjunto actual para pintarlo antes de
+  reemplazarlo. Las migraciones idempotentes `008_perfiles.sql` y
+  `009_listar_perfiles_usuario.sql` siembran los seis métodos, conceden sus
+  permisos y corrigen la descripción de la opción `Perfiles` a
   "Gestión de perfiles". No hay cambio de esquema.
 - Un perfil nuevo nace con 6 permisos base de sesión
   (`Session/Session/{logout,getSession,sessionExist}`, `Session/Token/refresh`,
@@ -244,9 +246,10 @@ es. Orden cronológico.
   `400` antes que `403`. Guarda anti-bloqueo: `Superusuario` no se renombra ni
   se desactiva, y no se puede quitar al último usuario activo que lo tiene
   (`409`).
-- Verificación: `pnpm test` **100/100** (17 casos nuevos en
-  `test/adminPerfiles.test.js` más la guarda en `test/usuario.test.js`) y
-  `node scripts/manual/perfiles_e2e.mjs --yes` **41/41 → PERFILES E2E OK**,
+- Verificación: `pnpm test` **102/102** (los casos de
+  `test/adminPerfiles.test.js`, la guarda en `test/usuario.test.js` y la
+  lectura del conjunto actual) y
+  `node scripts/manual/perfiles_e2e.mjs --yes` **43/43 → PERFILES E2E OK**,
   restaurando los perfiles de `admin_prueba` y borrando el perfil temporal.
 - Límite conocido: la unicidad del nombre sin distinguir mayúsculas se valida
   en el BO (`LOWER()`); la BD no tiene índice único funcional, así que dos

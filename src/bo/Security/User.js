@@ -308,6 +308,31 @@ export class User {
     return rows;
   }
 
+  async listarPerfilesUsuario(usuarioId) {
+    if (typeof usuarioId !== "string" || !UUID.test(usuarioId.trim())) {
+      throw new ErrorNegocio("usuarioId debe ser un UUID válido.", 400);
+    }
+    const id = usuarioId.trim();
+
+    const usuario = await this.#db.query(queries.findUsuarioById, [id]);
+    if (usuario.rows.length === 0) {
+      throw new ErrorNegocio("El usuario no existe.", 404);
+    }
+
+    const { rows } = await this.#db.query(queries.findPerfilesDeUsuario, [id]);
+
+    return {
+      usuarioId: id,
+      username: usuario.rows[0].username,
+      activo: usuario.rows[0].activo,
+      perfiles: rows.map((fila) => ({
+        id: fila.perfil_id,
+        nombre: fila.nombre_perfil,
+        activo: fila.activo,
+      })),
+    };
+  }
+
   // Perfiles activos del solicitante. Se consulta la BD en vez de confiar en
   // req.session.detallesPerfiles porque el camino de access token no trae
   // nombres hidratados.

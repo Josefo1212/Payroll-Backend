@@ -215,6 +215,20 @@ try {
   perfilesOriginales = await perfilesDeUsuario(adminUserId);
   check("admin_prueba tiene perfiles", perfilesOriginales.length > 0, true);
 
+  const leidos = await ejecutar(
+    cliente,
+    "Security",
+    "User",
+    "listarPerfilesUsuario",
+    [adminUserId],
+  );
+  check("listarPerfilesUsuario", leidos.status, 200);
+  check(
+    "perfiles actuales leidos",
+    leidos.body.perfiles.map((p) => p.id),
+    perfilesOriginales,
+  );
+
   const asignado = await ejecutar(
     cliente,
     "Security",

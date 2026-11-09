@@ -489,6 +489,36 @@ test("establecerPerfilesUsuario impide a un no Superusuario asignar privilegiado
   assert.deepEqual([...estado.usuarioPerfil.get(UUID_OTRO)], [2]);
 });
 
+test("listarPerfilesUsuario devuelve el conjunto actual con su estado", async () => {
+  const usuario = new User(security.db, crearReq({ profiles: [1] }));
+
+  const resultado = await usuario.listarPerfilesUsuario(UUID_ADMIN);
+
+  assert.deepEqual(resultado, {
+    usuarioId: UUID_ADMIN,
+    username: "admin",
+    activo: true,
+    perfiles: [
+      { id: 1, nombre: "Superusuario", activo: true },
+      { id: 3, nombre: "Empleado", activo: true },
+    ],
+  });
+});
+
+test("listarPerfilesUsuario valida el UUID y el usuario existente", async () => {
+  const usuario = new User(security.db, crearReq({ profiles: [1] }));
+
+  await assert.rejects(
+    () => usuario.listarPerfilesUsuario("no-es-uuid"),
+    (error) => error instanceof ErrorNegocio && error.status === 400,
+  );
+
+  await assert.rejects(
+    () => usuario.listarPerfilesUsuario("99999999-9999-4999-8999-999999999999"),
+    (error) => error instanceof ErrorNegocio && error.status === 404,
+  );
+});
+
 test("establecerPerfilesUsuario no deja el sistema sin superusuarios", async () => {
   // u3 queda como el único superusuario activo: u1 deja de tenerlo.
   estado.usuarioPerfil.set(UUID_ADMIN, new Set([3]));
