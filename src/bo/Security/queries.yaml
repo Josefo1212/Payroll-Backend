@@ -309,7 +309,7 @@ findAllOptionsAdmin: |
   LEFT JOIN permiso_opcion po ON po.opcion_id = o.id
   LEFT JOIN perfil pf ON pf.id = po.perfil_id
   WHERE s.activo
-  GROUP BY o.id, s.nombre, o.nombre, o.descripcion, o.orden, o.activo
+  GROUP BY o.id, s.id, s.nombre, o.nombre, o.descripcion, o.orden, o.activo
   ORDER BY o.activo DESC, s.nombre, o.orden, o.nombre
 
 findOpcionById: |
