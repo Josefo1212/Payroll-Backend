@@ -102,6 +102,22 @@ llegado completo a la base viva): `registrar` → Superusuario/RRHH;
 `Usuarios` → Superusuario/Administrador/RRHH; `Perfiles` →
 Superusuario/Administrador. `Permisos` sigue solo de Superusuario.
 
+**Spec 010 (administración de perfiles) implementada (2026-11-08):**
+`Security/Admin` suma `listarPerfilesAdmin` (Superusuario y Administrador),
+`crearPerfil`, `editarPerfil` y `cambiarEstadoPerfil` (solo Superusuario);
+`Security/User` suma `establecerPerfilesUsuario` (solo Superusuario), que
+reemplaza el conjunto completo de perfiles de un usuario en una transacción.
+La migración `db/migrations/008_perfiles.sql` siembra los cinco métodos y sus
+permisos y corrige la descripción de la opción `Perfiles`; no hay cambio de
+esquema. Un perfil nuevo nace con 6 permisos base de sesión
+(`Session/Session/{logout,getSession,sessionExist}`, `Session/Token/refresh`,
+`Security/Menu/getOptions`, `Security/User/cambiarClave`). Dos guardas:
+escalada de privilegios (`403` si un no Superusuario intenta asignar
+`Superusuario`, `Administrador` o `GerenteRRHH`, en `registrar` y en
+`establecerPerfilesUsuario`) y anti-bloqueo (`409` si `Superusuario` se
+renombra/desactiva o si se quita al último superusuario activo). `pnpm test`
+100/100 y `scripts/manual/perfiles_e2e.mjs` 41/41 → `PERFILES E2E OK`.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
 consultas de `queries.yaml` a los BO.
 
@@ -389,6 +405,16 @@ o datos desechables), y ninguna prueba depende de otra.
   actualiza solo la instancia que atendió la escritura. Con varias instancias
   hay que publicar el cambio (pub/sub) o llamar `reloadPermissions` en cada
   nodo; en este proyecto hay una sola. Ver spec 009.
+- **La unicidad de `perfil.nombre_perfil` en la BD distingue mayúsculas.** El
+  BO compara con `LOWER()` para que `Contador` y `contador` no convivan, pero
+  no hay índice único funcional: dos creaciones simultáneas podrían pasar las
+  dos. Se documenta; agregar el índice implica cambio de esquema (spec 010).
+- **Renombrar un perfil no rompe permisos ni usuarios.** Las llaves de los
+  mapas y las FKs usan `perfil_id`; la sesión refresca los nombres en la
+  siguiente petición. Por eso `editarPerfil` no recarga `PermissionMethodMap`.
+- **`req.session.profiles` puede no traer nombres.** El camino de access token
+  guarda ids; la guarda de escalada consulta los nombres con
+  `findActiveProfilesByIds` en vez de confiar en `detallesPerfiles`.
 
 ## Decisiones de diseño
 
@@ -415,6 +441,39 @@ se agrega una nueva que la reemplaza.
   re-ejecutar el seed no debe exponer la vista a otro perfil.
 - **Sin cambio de esquema.** `permiso_metodo (perfil_id, metodo_id)` ya
   existía; 006 solo inserta datos. `db/schema.dbml` no cambia.
+- **La vida del perfil se administra desde el BO.** `Security/Admin` expone
+  `listarPerfilesAdmin`, `crearPerfil`, `editarPerfil` y
+  `cambiarEstadoPerfil`; `Security/User` expone `establecerPerfilesUsuario`.
+  Motivo: crear o corregir un perfil y asignarlo a un usuario obligaba a
+  escribir SQL. No hay borrado físico: se desactiva (`activo = false`) y las
+  FKs conservan el historial.
+- **Reemplazo del conjunto de perfiles, no pares agregar/quitar.**
+  `establecerPerfilesUsuario` hace `DELETE` + `INSERT` en una transacción: el
+  cliente manda el conjunto final y no puede quedar un estado intermedio con
+  dos peticiones concurrentes.
+- **Un perfil nuevo nace usable.** `crearPerfil` inserta el perfil y sus 6
+  permisos base de sesión en la misma transacción. Sin ellos, un usuario con
+  solo ese perfil no podría ni cerrar sesión ni cambiar su clave.
+- **Guarda de escalada de privilegios.** `PERFILES_PRIVILEGIADOS =
+  {Superusuario, Administrador, GerenteRRHH}`. Un solicitante sin
+  `Superusuario` que intente asignarlos recibe `403`, tanto en `registrar`
+  como en `establecerPerfilesUsuario`. Motivo: sin la guarda, RRHH podía
+  crearse un Administrador. La comprobación va dentro de la transacción y
+  después de validar que los perfiles existen/están activos, así un id
+  inválido sigue siendo `400`.
+- **`Superusuario` es protegido por nombre.** No se renombra ni se desactiva
+  (`409`), y no se puede quitar al último usuario activo que lo tiene (`409`,
+  `contarOtrosSuperusuariosActivos` excluye al usuario editado). Motivo:
+  renombrarlo rompería la guarda y dejar el sistema sin superusuarios lo
+  dejaría sin administración.
+- **La lectura de perfiles también es de `Administrador`.**
+  `listarPerfilesAdmin` se concede a Superusuario y Administrador; las cuatro
+  mutaciones quedan solo en Superusuario. `editarPerfil` no recarga el mapa:
+  las llaves usan `perfil_id`, no el nombre; `crearPerfil` y
+  `cambiarEstadoPerfil` sí (`loadPermission` filtra `pf.activo`).
+- **Sin cambio de esquema (010).** Se reutiliza `perfil` y `usuario_perfil`;
+  la migración 008 solo inserta métodos/permisos y corrige una descripción.
+  `db/schema.dbml` no cambia.
 
 ### 2026-10-20
 

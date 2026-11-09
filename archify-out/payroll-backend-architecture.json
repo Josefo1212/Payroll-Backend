@@ -44,7 +44,7 @@
   ],
   "cards": [
     { "dot": "cyan", "title": "Punto de entrada único", "items": ["app.js monta el router /api (routes.js)", "El cliente no arma rutas por entidad", "Manda { subsystem, class, method, params }"] },
-    { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → sesión → permiso → reflexión", "Permisos en mapas en memoria", "Security/Admin edita permisos de método: base primero, mapa en caliente", "Guarda anti-bloqueo: Superusuario conserva la administración"] },
+    { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → sesión → permiso → reflexión", "Permisos en mapas en memoria; Security/Admin los edita en caliente", "Security/Admin administra perfiles; Security/User reemplaza los del usuario", "Guardas: escalada (403) y anti-bloqueo de Superusuario (409)"] },
     { "dot": "emerald", "title": "Datos", "items": ["Solo los objetos de negocio tocan la base", "A través del componente de datos, con parámetros", "Consultas en queries.yaml global y por BO, leídas una vez"] },
     { "dot": "violet", "title": "Servicios y nómina", "items": ["Lógica reutilizable sin BD ni sesión", "PasswordService, PermissionKeyService y TokenService", "PayrollCalculator con decimal.js; access JWT y refresh rotativo"] }
   ]

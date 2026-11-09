@@ -222,3 +222,33 @@ es. Orden cronológico.
 - Incluye un `DELETE` defensivo para que reejecutar el seed no vuelva a
   conceder opciones que el perfil no puede usar. Verificado: 30
   `permiso_opcion` (22 de Payroll + 8 de Security), segunda corrida 0 filas.
+
+### Administración de perfiles y asignación a usuarios (2026-11-08)
+
+- Spec 010: `Security/Admin` suma `listarPerfilesAdmin` (Superusuario y
+  Administrador), `crearPerfil`, `editarPerfil` y `cambiarEstadoPerfil` (solo
+  Superusuario); `Security/User` suma `establecerPerfilesUsuario` (solo
+  Superusuario), que reemplaza el conjunto completo en una transacción
+  (`DELETE` + `INSERT`). La migración idempotente
+  `db/migrations/008_perfiles.sql` siembra los cinco métodos, concede sus
+  permisos y corrige la descripción de la opción `Perfiles` a
+  "Gestión de perfiles". No hay cambio de esquema.
+- Un perfil nuevo nace con 6 permisos base de sesión
+  (`Session/Session/{logout,getSession,sessionExist}`, `Session/Token/refresh`,
+  `Security/Menu/getOptions`, `Security/User/cambiarClave`) insertados en la
+  misma transacción. `crearPerfil` y `cambiarEstadoPerfil` recargan
+  `PermissionMethodMap`; `editarPerfil` no, porque las llaves usan `perfil_id`.
+- Guarda de escalada: un solicitante sin `Superusuario` no puede asignar
+  `Superusuario`, `Administrador` ni `GerenteRRHH` (`403`), ni en `registrar`
+  ni en `establecerPerfilesUsuario`; un id inexistente/inactivo sigue dando
+  `400` antes que `403`. Guarda anti-bloqueo: `Superusuario` no se renombra ni
+  se desactiva, y no se puede quitar al último usuario activo que lo tiene
+  (`409`).
+- Verificación: `pnpm test` **100/100** (17 casos nuevos en
+  `test/adminPerfiles.test.js` más la guarda en `test/usuario.test.js`) y
+  `node scripts/manual/perfiles_e2e.mjs --yes` **41/41 → PERFILES E2E OK**,
+  restaurando los perfiles de `admin_prueba` y borrando el perfil temporal.
+- Límite conocido: la unicidad del nombre sin distinguir mayúsculas se valida
+  en el BO (`LOWER()`); la BD no tiene índice único funcional, así que dos
+  creaciones concurrentes de `Contador`/`contador` podrían pasar. Se
+  documenta sin cambiar el esquema.
