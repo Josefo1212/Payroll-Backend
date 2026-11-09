@@ -2,6 +2,18 @@ import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { passwordService } from "../../services/PasswordService.js";
 
+const PERFIL_PROTEGIDO = "Superusuario";
+
+// Perfiles que otorgan capacidad de administración. Solo un Superusuario
+// puede asignarlos; si no, un RRHH podría crearse un Administrador y escalar.
+const PERFILES_PRIVILEGIADOS = new Set([
+  "Superusuario",
+  "Administrador",
+  "GerenteRRHH",
+]);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class User {
   #db;
   #req;
@@ -101,6 +113,8 @@ export class User {
           );
         }
 
+        await this.#validarPrivilegios(cliente, perfilesActivos.rows);
+
         if (laboral) {
           const cargo = await cliente.query(queries.findCargoById, [Number(laboral.cargo_id)]);
           if (cargo.rows.length === 0 || cargo.rows[0].activo === false) {
@@ -167,6 +181,79 @@ export class User {
     }
   }
 
+  async establecerPerfilesUsuario(usuarioId, perfiles) {
+    if (typeof usuarioId !== "string" || !UUID.test(usuarioId.trim())) {
+      throw new ErrorNegocio("usuarioId debe ser un UUID válido.", 400);
+    }
+    const id = usuarioId.trim();
+
+    if (!Array.isArray(perfiles)) {
+      throw new ErrorNegocio("perfiles debe ser un arreglo de ids.", 400);
+    }
+
+    const ids = [...new Set(perfiles)];
+    if (ids.length === 0) {
+      throw new ErrorNegocio(
+        "Debe asignarse al menos un perfil al usuario.",
+        400,
+      );
+    }
+
+    if (!ids.every((valor) => Number.isInteger(valor) && valor > 0)) {
+      throw new ErrorNegocio("Los perfiles deben ser ids enteros positivos.", 400);
+    }
+
+    return this.#db.transaction(async (cliente) => {
+      const usuario = await cliente.query(queries.findUsuarioById, [id]);
+      if (usuario.rows.length === 0) {
+        throw new ErrorNegocio("El usuario no existe.", 404);
+      }
+
+      const perfilesActivos = await cliente.query(
+        queries.findActiveProfilesByIds,
+        [ids],
+      );
+      if (perfilesActivos.rows.length !== ids.length) {
+        throw new ErrorNegocio("Algún perfil no existe o está inactivo.", 400);
+      }
+
+      await this.#validarPrivilegios(cliente, perfilesActivos.rows);
+
+      const actuales = await cliente.query(queries.findPerfilesDeUsuario, [id]);
+      const teniaSuperusuario = actuales.rows.some(
+        (fila) => fila.nombre_perfil === PERFIL_PROTEGIDO && fila.activo,
+      );
+      const pedidosSuperusuario = perfilesActivos.rows.some(
+        (fila) => fila.nombre_perfil === PERFIL_PROTEGIDO,
+      );
+
+      if (teniaSuperusuario && !pedidosSuperusuario) {
+        const otros = await cliente.query(
+          queries.contarOtrosSuperusuariosActivos,
+          [id],
+        );
+        if (Number(otros.rows[0]?.total ?? 0) === 0) {
+          throw new ErrorNegocio(
+            "No se puede dejar el sistema sin usuarios activos con perfil Superusuario.",
+            409,
+          );
+        }
+      }
+
+      await cliente.query(queries.deleteUsuarioPerfilTodos, [id]);
+      await cliente.query(queries.insertUsuarioPerfil, [id, ids]);
+
+      return {
+        usuarioId: id,
+        username: usuario.rows[0].username,
+        perfiles: perfilesActivos.rows.map((fila) => ({
+          id: fila.id,
+          nombre: fila.nombre_perfil,
+        })),
+      };
+    });
+  }
+
   async cambiarClave(actual, nueva) {
     const usuarioId = this.#req?.session?.userID;
     if (!usuarioId) {
@@ -220,4 +307,38 @@ export class User {
     const { rows } = await this.#db.query(queries.findAllPersonas);
     return rows;
   }
+
+  // Perfiles activos del solicitante. Se consulta la BD en vez de confiar en
+  // req.session.detallesPerfiles porque el camino de access token no trae
+  // nombres hidratados.
+  #perfilesSolicitante = async (cliente) => {
+    const ids = Array.isArray(this.#req?.session?.profiles)
+      ? this.#req.session.profiles
+      : [];
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const { rows } = await cliente.query(queries.findActiveProfilesByIds, [ids]);
+    return rows;
+  };
+
+  #validarPrivilegios = async (cliente, perfilesPedidos) => {
+    const pidePrivilegiado = perfilesPedidos.some((fila) =>
+      PERFILES_PRIVILEGIADOS.has(fila.nombre_perfil),
+    );
+    if (!pidePrivilegiado) {
+      return;
+    }
+
+    const solicitante = await this.#perfilesSolicitante(cliente);
+    if (solicitante.some((fila) => fila.nombre_perfil === PERFIL_PROTEGIDO)) {
+      return;
+    }
+
+    throw new ErrorNegocio(
+      "Solo Superusuario puede asignar los perfiles Superusuario, Administrador o GerenteRRHH.",
+      403,
+    );
+  };
 }
