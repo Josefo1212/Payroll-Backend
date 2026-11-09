@@ -84,6 +84,17 @@ están aplicadas en el branch de desarrollo de Neon** (la credencial volvió a
 autenticar); `pnpm test` 69/69 y `payroll_e2e.mjs` 50/50 → `PAYROLL E2E OK`.
 Los pasos originales para el socio quedan en `PENDIENTE-SOCIO.txt`.
 
+**Spec 009 (permisos de método por perfil) implementada (2026-11-08):**
+`Security/Admin` suma `listarMetodos`, `listarPermisosMetodo`,
+`asignarPermisoMetodo` y `quitarPermisoMetodo`, exclusivos de
+`Superusuario`; la migración `db/migrations/006_permisos_metodos.sql` los
+siembra y crea la opción de menú `Permisos`, también exclusiva de ese perfil.
+Cada cambio se escribe primero en `permiso_metodo` y después actualiza
+`PermissionMethodMap` con `security.setPermissionMethod` (sin reiniciar).
+`Superusuario` no puede perder los cinco métodos que sostienen la vista
+(409). `pnpm test` 80/80 y `scripts/manual/permisos_e2e.mjs` 38/38 →
+`PERMISOS E2E OK`.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
 consultas de `queries.yaml` a los BO.
 
@@ -367,11 +378,36 @@ o datos desechables), y ninguna prueba depende de otra.
 - **`ON DELETE RESTRICT` lanza `restrict_violation` (23001)**, no
   `foreign_key_violation` (23503). Manejar ambos al traducir errores. Ver
   skill `nomina-postgres-neon`.
+- **Los mapas de permisos viven en el proceso.** `setPermissionMethod`
+  actualiza solo la instancia que atendió la escritura. Con varias instancias
+  hay que publicar el cambio (pub/sub) o llamar `reloadPermissions` en cada
+  nodo; en este proyecto hay una sola. Ver spec 009.
 
 ## Decisiones de diseño
 
 Registro de decisiones con su motivo. Las viejas no se editan: si una cambia,
 se agrega una nueva que la reemplaza.
+
+### 2026-11-08
+
+- **Administración de permisos de método en caliente.** `Security/Admin`
+  expone `listarMetodos`, `listarPermisosMetodo`, `asignarPermisoMetodo` y
+  `quitarPermisoMetodo`, solo para `Superusuario`. Motivo: cambiar quién
+  ejecuta un método obligaba a escribir SQL y reiniciar el backend.
+- **La base manda: primero `permiso_metodo`, después el mapa.** Si la
+  escritura falla, el mapa no cambia. Los ids se validan como enteros
+  positivos antes de consultar (`400`); perfil o método inexistente/inactivo
+  es `404`. Asignar y quitar son idempotentes (`yaEstaba` / `yaNoEstaba`).
+- **Guarda anti-bloqueo.** `Superusuario` no puede perder
+  `Security/Admin/{listarMetodos,listarPermisosMetodo,asignarPermisoMetodo,quitarPermisoMetodo}`
+  ni `Security/User/listarPerfiles` (`409`): sin ellos nadie podría volver a
+  conceder permisos.
+- **La opción de menú `Permisos` es exclusiva de `Superusuario`.** La
+  migración 006 la crea (`Security`, orden 4) y borra el grant que el seed
+  concede a `Administrador` para todas las opciones de `Security`. Motivo:
+  re-ejecutar el seed no debe exponer la vista a otro perfil.
+- **Sin cambio de esquema.** `permiso_metodo (perfil_id, metodo_id)` ya
+  existía; 006 solo inserta datos. `db/schema.dbml` no cambia.
 
 ### 2026-10-20
 

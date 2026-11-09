@@ -187,3 +187,24 @@ es. Orden cronológico.
   86.63, neto 488.37; el empleado ve su recibo y recibe 403 al procesar).
 - Diagrama `archify` refrescado con el subsistema Payroll (9/9 checks
   showcase, 0 errores, 0 warnings, visual-check sin overflow).
+
+### Administración de permisos de método por perfil (2026-11-08)
+
+- Spec 009: `Security/Admin` suma `listarMetodos`, `listarPermisosMetodo`,
+  `asignarPermisoMetodo` y `quitarPermisoMetodo`. La migración idempotente
+  `db/migrations/006_permisos_metodos.sql` siembra los cuatro métodos, los
+  concede solo a `Superusuario` y crea la opción de menú `Permisos`
+  (`Security`, orden 4), exclusiva de ese perfil (borra el grant que el seed
+  da a `Administrador`).
+- Seis consultas nuevas en `src/bo/Security/queries.yaml`. El BO valida los
+  ids (`400`), exige perfil/método activos (`404`), escribe primero en
+  `permiso_metodo` y después actualiza `PermissionMethodMap` con
+  `security.setPermissionMethod`, sin reiniciar. Asignar y quitar son
+  idempotentes (`yaEstaba` / `yaNoEstaba`).
+- Guarda anti-bloqueo: quitar a `Superusuario` cualquiera de los cinco
+  métodos que sostienen la vista responde `409` sin tocar base ni mapa.
+- Verificación: `pnpm test` **80/80** (11 casos nuevos en
+  `test/adminPermisos.test.js`) y `node scripts/manual/permisos_e2e.mjs
+  --yes` **38/38 → PERMISOS E2E OK**, restaurando el estado inicial.
+- Diagrama `archify` refrescado (mención de la edición en caliente y de la
+  guarda anti-bloqueo); grafo `graphify` regenerado.
