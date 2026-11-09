@@ -62,6 +62,83 @@ export class Admin {
     };
   }
 
+  async asignarPermisoMetodo(perfilId, metodoId) {
+    const perfil = await this.#exigirPerfil(
+      this.#validarId(perfilId, "perfilId"),
+    );
+    const metodo = await this.#exigirMetodo(
+      this.#validarId(metodoId, "metodoId"),
+    );
+
+    // La base primero: si el INSERT falla, el mapa no miente.
+    const { rowCount } = await this.#db.query(queries.insertPermisoMetodo, [
+      perfil.id,
+      metodo.id,
+    ]);
+
+    security.setPermissionMethod(
+      metodo.subsistema,
+      metodo.clase,
+      metodo.metodo,
+      perfil.id,
+      true,
+    );
+
+    return {
+      perfilId: perfil.id,
+      perfil: perfil.nombre_perfil,
+      metodoId: metodo.id,
+      subsistema: metodo.subsistema,
+      clase: metodo.clase,
+      metodo: metodo.metodo,
+      asignado: true,
+      yaEstaba: rowCount === 0,
+    };
+  }
+
+  async quitarPermisoMetodo(perfilId, metodoId) {
+    const perfil = await this.#exigirPerfil(
+      this.#validarId(perfilId, "perfilId"),
+    );
+    const metodo = await this.#exigirMetodo(
+      this.#validarId(metodoId, "metodoId"),
+    );
+
+    if (
+      perfil.nombre_perfil === PERFIL_PROTEGIDO &&
+      this.#esCritico(metodo)
+    ) {
+      throw new ErrorNegocio(
+        `No se puede quitar ${metodo.subsistema}/${metodo.clase}/${metodo.metodo}: es crítico para que Superusuario administre permisos.`,
+        409,
+      );
+    }
+
+    const { rowCount } = await this.#db.query(queries.deletePermisoMetodo, [
+      perfil.id,
+      metodo.id,
+    ]);
+
+    security.setPermissionMethod(
+      metodo.subsistema,
+      metodo.clase,
+      metodo.metodo,
+      perfil.id,
+      false,
+    );
+
+    return {
+      perfilId: perfil.id,
+      perfil: perfil.nombre_perfil,
+      metodoId: metodo.id,
+      subsistema: metodo.subsistema,
+      clase: metodo.clase,
+      metodo: metodo.metodo,
+      asignado: false,
+      yaNoEstaba: rowCount === 0,
+    };
+  }
+
   #formatearMetodo = (fila) => ({
     id: fila.id,
     subsistema: fila.subsistema,
