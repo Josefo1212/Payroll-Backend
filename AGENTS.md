@@ -121,6 +121,26 @@ escalada de privilegios (`403` si un no Superusuario intenta asignar
 renombra/desactiva o si se quita al último superusuario activo). `pnpm test`
 102/102 y `scripts/manual/perfiles_e2e.mjs` 43/43 → `PERFILES E2E OK`.
 
+**Spec 011 (administración de opciones de menú) implementada (2026-11-09):**
+`Security/Admin` suma el catálogo `listarSubsistemas`, `listarOpciones`,
+`crearOpcion`, `editarOpcion` y `cambiarEstadoOpcion`, y la asignación
+perfil ↔ opción `listarPermisosOpcion`, `asignarPermisoOpcion` y
+`quitarPermisoOpcion`, todos solo para `Superusuario`. La migración
+`db/migrations/010_opciones_perfil.sql` siembra los siete métodos del
+catálogo y la asignación, sus permisos y la opción de menú `Opciones`
+(Security, orden 5); la `011_listar_subsistemas.sql` agrega
+`listarSubsistemas`, que es el origen de los `subsistemaId` de `crearOpcion`.
+No hay cambio de esquema.
+`crearPerfil` acepta un tercer parámetro opcional `perfilPlantillaId` y clona
+en la misma transacción los `permiso_metodo` **y** los `permiso_opcion` de la
+plantilla, para que el perfil nuevo no vea entradas que no puede ejecutar.
+`listarOpciones` devuelve activas e inactivas con `subsistemaId`, `perfiles`
+(solo perfiles activos) y `protegida`. Guardas: `OPCIONES_CRITICAS =
+{Security/Opciones, Security/Permisos, Security/Perfiles, Security/Usuarios}`
+no se pueden quitar, renombrar ni desactivar en `Superusuario` (`409`), y
+`METODOS_CRITICOS` incluye los ocho métodos nuevos. `pnpm test` 133/133 y
+`scripts/manual/opciones_e2e.mjs` 62/62 → `OPCIONES E2E OK`.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
 consultas de `queries.yaml` a los BO.
 
@@ -418,11 +438,61 @@ o datos desechables), y ninguna prueba depende de otra.
 - **`req.session.profiles` puede no traer nombres.** El camino de access token
   guarda ids; la guarda de escalada consulta los nombres con
   `findActiveProfilesByIds` en vez de confiar en `detallesPerfiles`.
+- **`GROUP BY` debe incluir toda columna no agregada.** `findAllOptionsAdmin`
+  agrega `s.id AS subsistema_id` para que el front pueda crear opciones en ese
+  subsistema; sin agregar `s.id` al `GROUP BY`, PostgreSQL responde `42803`.
+  Las pruebas con base falsa no ven SQL: el E2E real sí.
+- **Ocultar una opción no revoca el método.** No existe relación
+  `opcion ↔ metodo` en el esquema: quitar la opción del menú deja el endpoint
+  ejecutable si el permiso de método sigue concedido. Se avisa en el front.
+- **`setPermissionOption` exige los seis campos** (`id`, `nombre`, `orden`,
+  `descripcion`, `subsistema`, `perfilId`); con datos incompletos el menú
+  pinta `undefined`. `asignarPermisoOpcion` los arma desde la fila de la BD.
+- **Renombrar o desactivar una opción exige recargar el mapa.** La llave es
+  `Subsistema_nombre_perfilId` y el nombre vive dentro del valor; por eso
+  `editarOpcion` y `cambiarEstadoOpcion` llaman `loadPermission`. Desactivar
+  no borra `permiso_opcion`: reactivar restaura el acceso.
+- **El nombre de una opción no puede llevar `_`.** La llave del mapa usa `_`
+  como separador; permitirlo volvería ambiguas dos combinaciones distintas.
+  Se valida 2–80 alfanuméricos empezando por letra.
 
 ## Decisiones de diseño
 
 Registro de decisiones con su motivo. Las viejas no se editan: si una cambia,
 se agrega una nueva que la reemplaza.
+
+### 2026-11-09
+
+- **El catálogo de opciones se administra desde el BO.** `Security/Admin`
+  expone `listarOpciones`, `crearOpcion`, `editarOpcion` y
+  `cambiarEstadoOpcion`, solo para `Superusuario`. Motivo: crear una opción o
+  corregir su orden obligaba a escribir SQL. No hay borrado físico: se
+  desactiva (`activo = false`) y `permiso_opcion` se conserva para que
+  reactivar restaure el acceso.
+- **Asignación perfil ↔ opción simétrica a la de métodos.**
+  `listarPermisosOpcion`, `asignarPermisoOpcion` y `quitarPermisoOpcion`
+  escriben primero en `permiso_opcion` y después actualizan
+  `PermissionOptionMap` con `security.setPermissionOption`, sin reiniciar.
+  `asignar` y `quitar` son idempotentes (`yaEstaba` / `yaNoEstaba`). Es la
+  segunda interfaz que pedía el front: la de métodos es la spec 009.
+- **`listarOpciones` trae `subsistemaId`, `perfiles` y `protegida`.**
+  `subsistemaId` es lo que necesita `crearOpcion` (el front no puede inventar
+  ids); `perfiles` cuenta solo perfiles activos que ven la opción, para avisar
+  antes de desactivarla; `protegida` evita ofrecer acciones que darán `409`.
+- **Guardas de opciones críticas.**
+  `OPCIONES_CRITICAS = {Security/Opciones, Security/Permisos,
+  Security/Perfiles, Security/Usuarios}`: quitar, renombrar o desactivar
+  cualquiera en `Superusuario` responde `409`. Motivo: sin ellas nadie podría
+  volver a administrar la seguridad desde el menú. La guarda es por nombre
+  (`Subsistema/nombre`), no por id.
+- **`crearPerfil` con plantilla opcional.** Tercer parámetro
+  `perfilPlantillaId`: clona `permiso_metodo` y `permiso_opcion` de la
+  plantilla en la misma transacción, después de los 6 permisos base. Motivo:
+  un perfil nuevo que ve entradas que no puede ejecutar confunde al usuario.
+  Sin plantilla, el contrato es idéntico al de la spec 010.
+- **Sin cambio de esquema (011).** Se reutilizan `opcion`, `permiso_opcion`,
+  `permiso_metodo` y `perfil`; `db/schema.dbml` no cambia. La migración 010
+  solo inserta métodos, permisos y la opción `Opciones`.
 
 ### 2026-11-08
 

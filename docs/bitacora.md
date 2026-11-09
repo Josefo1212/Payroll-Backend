@@ -255,3 +255,39 @@ es. Orden cronológico.
   en el BO (`LOWER()`); la BD no tiene índice único funcional, así que dos
   creaciones concurrentes de `Contador`/`contador` podrían pasar. Se
   documenta sin cambiar el esquema.
+
+### Administración de opciones de menú por perfil (2026-11-09)
+
+- Spec 011: `Security/Admin` suma el catálogo `listarSubsistemas`,
+  `listarOpciones`, `crearOpcion`, `editarOpcion` y `cambiarEstadoOpcion`, y
+  la asignación perfil ↔ opción
+  `listarPermisosOpcion`, `asignarPermisoOpcion` y `quitarPermisoOpcion`,
+  todos solo para `Superusuario`. Es la segunda interfaz de administración que
+  necesita el front; la de métodos ya existía desde la spec 009.
+- La migración idempotente `db/migrations/010_opciones_perfil.sql` siembra los
+  siete métodos del catálogo y la asignación, concede sus permisos solo a
+  `Superusuario` y crea la opción de menú `Opciones` (Security, orden 5),
+  exclusiva de ese perfil. La `011_listar_subsistemas.sql` agrega
+  `listarSubsistemas` (el formulario de creación necesita el id de cualquier
+  subsistema, incluso de uno sin opciones). Sin cambio de esquema.
+- `listarOpciones` devuelve activas e inactivas con `subsistemaId` (lo que
+  necesita `crearOpcion`), `perfiles` (solo perfiles activos que la ven) y
+  `protegida`. `editarOpcion` y `cambiarEstadoOpcion` recargan
+  `PermissionOptionMap`; desactivar no borra `permiso_opcion`, así que
+  reactivar restaura el acceso. Renombrar cambia la llave del mapa.
+- Guardas: `OPCIONES_CRITICAS = {Security/Opciones, Security/Permisos,
+  Security/Perfiles, Security/Usuarios}` no se pueden quitar, renombrar ni
+  desactivar en `Superusuario` (`409`); `METODOS_CRITICOS` suma los siete
+  métodos nuevos. Nombre de opción: 2–80 alfanuméricos empezando por letra,
+  sin `_`; único por subsistema con `LOWER()`; `orden` entero 0–32767.
+- `crearPerfil` acepta un tercer parámetro opcional `perfilPlantillaId` y
+  clona `permiso_metodo` y `permiso_opcion` de la plantilla en la misma
+  transacción, después de los 6 permisos base. Sin plantilla, el contrato es
+  idéntico a la spec 010.
+- Verificación: `pnpm test` **133/133** (31 casos en
+  `test/adminOpciones.test.js`) y `node scripts/manual/opciones_e2e.mjs
+  --yes` **62/62 → OPCIONES E2E OK**, comprobando el menú en caliente y
+  restaurando los perfiles de `admin_prueba` y borrando los temporales.
+- El E2E real destapó un `GROUP BY` incompleto en `findAllOptionsAdmin`
+  (`s.id` faltaba) que la base falsa no podía ver: PostgreSQL respondía
+  `42803`. Corregido y documentado en `AGENTS.md`.

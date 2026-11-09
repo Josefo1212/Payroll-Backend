@@ -7,7 +7,7 @@ algo en regla permanente, se mueve a su documento y se quita de este archivo.
 ## Estado actual
 
 - Node.js + Express + `pg` sobre PostgreSQL (Neon). Monolito, un solo punto
-  de entrada al negocio (`POST /execute`, aún no construido).
+  de entrada al negocio (`POST /api/execute` → `Security.executeMethod`).
 - **Fase 0 (Bootstrap + Sesión) hecha**: `src/index.js`, `src/app.js`,
   `src/config/database.js` (Pool), `src/database/Database.js`
   (`query`/`transaction`), `POST /api/login`, `GET /api/me` (protegido) y
@@ -48,12 +48,10 @@ algo en regla permanente, se mueve a su documento y se quita de este archivo.
 
 ## Próximo
 
-- **Terminar la spec 004 (JWT)** — T6 (ruta `/refresh` y guard),
-  T7 (config/docs) y T8 (verificación de punta a punta).
-- **Fase 5** — endpoint de opciones/menú desde `PermissionOptionMap`, front y
-  migrar `queries.yaml` a los BO.
-- Conectar `getPermissionOption`/`setPermissionOption` (API del profesor, hoy
-  sin consumidor).
+- **Front (Fase 5)** — las dos pantallas de administración (perfil ↔ método y
+  perfil ↔ opción) contra los métodos de `Security/Admin`, y el endpoint de
+  opciones/menú desde `PermissionOptionMap`.
+- Migrar `queries.yaml` a los BO.
 
 ## Pendientes menores
 
@@ -85,4 +83,5 @@ algo en regla permanente, se mueve a su documento y se quita de este archivo.
 - **Spec 009 (permisos de método por perfil) implementada (2026-11-08)**: `Security/Admin` suma `listarMetodos`, `listarPermisosMetodo`, `asignarPermisoMetodo` y `quitarPermisoMetodo` (solo `Superusuario`); migración `006_permisos_metodos.sql` con la opción de menú `Permisos` exclusiva de `Superusuario`. La escritura va a `permiso_metodo` y luego al mapa con `security.setPermissionMethod` (en caliente, sin reiniciar); guarda anti-bloqueo 409 para los cinco métodos críticos. `pnpm test` **80/80** y `permisos_e2e.mjs` **38/38 → PERMISOS E2E OK**. Diagrama `archify` y grafo `graphify` refrescados.
 - **Opciones de Security completadas (2026-11-08)**: migración `007_opciones_security.sql`; la base viva tenía `registrar`/`Usuarios`/`Perfiles` sin grants. Quedaron `registrar` → Superusuario/RRHH, `Usuarios` → Superusuario/Administrador/RRHH, `Perfiles` → Superusuario/Administrador, `Permisos` → Superusuario.
 - **Spec 010 (administración de perfiles) implementada (2026-11-08)**: `Security/Admin` suma `listarPerfilesAdmin` (Superusuario y Administrador), `crearPerfil`, `editarPerfil` y `cambiarEstadoPerfil` (solo Superusuario); `Security/User` suma `establecerPerfilesUsuario` (solo Superusuario), que reemplaza el conjunto de perfiles en una transacción, y `listarPerfilesUsuario` (Superusuario y Administrador) para leer el conjunto actual. Migraciones `008_perfiles.sql` y `009_listar_perfiles_usuario.sql` (6 métodos + permisos, sin cambio de esquema). Perfil nuevo con 6 permisos base de sesión. Guardas: escalada de privilegios (`403`) y anti-bloqueo de `Superusuario` (`409`). `pnpm test` **102/102** y `perfiles_e2e.mjs` **43/43 → PERFILES E2E OK**. Diagrama `archify` y grafo `graphify` refrescados.
-- **Pendiente de la 010**: administrar `permiso_opcion` (qué opciones ve un perfil) quedó fuera de alcance, para una spec posterior.
+- **Spec 011 (administración de opciones de menú) implementada (2026-11-09)**: `Security/Admin` suma `listarSubsistemas`, `listarOpciones`, `crearOpcion`, `editarOpcion`, `cambiarEstadoOpcion`, `listarPermisosOpcion`, `asignarPermisoOpcion` y `quitarPermisoOpcion` (solo Superusuario); migraciones `010_opciones_perfil.sql` (7 métodos, permisos y opción `Opciones`) y `011_listar_subsistemas.sql`. `listarOpciones` trae `subsistemaId`, `perfiles` y `protegida`; las mutaciones recargan el mapa en caliente. `crearPerfil` acepta `perfilPlantillaId` y clona métodos y opciones de la plantilla. Guardas `OPCIONES_CRITICAS` y `METODOS_CRITICOS` (`409`). `pnpm test` **133/133** y `opciones_e2e.mjs` **62/62 → OPCIONES E2E OK**. Diagrama `archify` y grafo `graphify` refrescados.
+- **Pendiente de la 010**: administrar `permiso_opcion` (qué opciones ve un perfil) quedó fuera de alcance; lo cubre la spec 011.

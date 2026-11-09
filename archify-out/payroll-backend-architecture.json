@@ -22,7 +22,7 @@
     { "id": "db", "type": "backend", "label": "Componente de datos", "sublabel": "query() · transaction()", "tag": "Database.js", "pos": [970, 220], "size": [170, 72] },
     { "id": "neon", "type": "database", "label": "PostgreSQL · Neon", "sublabel": "pool máx 10", "brand": "postgresql", "tag": "sslmode=require", "pos": [1170, 220], "size": [170, 72] },
     { "id": "sesion", "type": "backend", "label": "Sesión + CORS", "sublabel": "connect.sid · access_token", "tag": "express-session + JWT", "pos": [240, 60], "size": [150, 68] },
-    { "id": "permisos", "type": "security", "label": "Mapas en memoria", "sublabel": "PermissionMethodMap", "tag": "O(1) por perfil · edición en caliente", "pos": [470, 60], "size": [160, 68] },
+    { "id": "permisos", "type": "security", "label": "Mapas en memoria", "sublabel": "métodos + opciones", "tag": "O(1) por perfil · edición en caliente", "pos": [470, 60], "size": [160, 68] },
     { "id": "queries", "type": "backend", "label": "queries.yaml", "sublabel": "global · por BO", "tag": "SQL parametrizado $1, $2", "pos": [970, 60], "size": [170, 68] }
   ],
   "boundaries": [
@@ -44,7 +44,7 @@
   ],
   "cards": [
     { "dot": "cyan", "title": "Punto de entrada único", "items": ["app.js monta el router /api (routes.js)", "El cliente no arma rutas por entidad", "Manda { subsystem, class, method, params }"] },
-    { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → sesión → permiso → reflexión", "Permisos en mapas en memoria; Security/Admin los edita en caliente", "Security/Admin administra perfiles; Security/User reemplaza los del usuario", "Guardas: escalada (403) y anti-bloqueo de Superusuario (409)"] },
+    { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → sesión → permiso → reflexión", "Permisos en mapas en memoria; Security/Admin edita métodos y opciones en caliente", "Security/Admin administra perfiles, el catálogo de opciones y su asignación", "Guardas: escalada (403) y anti-bloqueo de Superusuario y opciones críticas (409)"] },
     { "dot": "emerald", "title": "Datos", "items": ["Solo los objetos de negocio tocan la base", "A través del componente de datos, con parámetros", "Consultas en queries.yaml global y por BO, leídas una vez"] },
     { "dot": "violet", "title": "Servicios y nómina", "items": ["Lógica reutilizable sin BD ni sesión", "PasswordService, PermissionKeyService y TokenService", "PayrollCalculator con decimal.js; access JWT y refresh rotativo"] }
   ]
