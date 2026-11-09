@@ -142,3 +142,56 @@ insertContratoSalario: |
   INSERT INTO contrato_salario (contrato_id, monto, vigente_desde, vigente_hasta, motivo)
   VALUES ($1, $2, $3, $4, $5)
   RETURNING id
+
+# ---------------------------------------------------------------------------
+# Administración de permisos de método por perfil (Security/Admin)
+# ---------------------------------------------------------------------------
+# El catálogo filtra por vigencia igual que loadPermissionMethods: si el
+# método, su clase o su subsistema están inactivos, no se administran.
+findAllActiveMethods: |
+  SELECT m.id,
+         s.nombre AS subsistema,
+         c.nombre AS clase,
+         m.nombre AS metodo,
+         m.descripcion
+  FROM metodo m
+  JOIN clase c ON c.id = m.clase_id
+  JOIN subsistema s ON s.id = c.subsistema_id
+  WHERE m.activo AND c.activo AND s.activo
+  ORDER BY s.nombre, c.nombre, m.nombre
+
+findMetodoById: |
+  SELECT m.id, m.activo,
+         s.nombre AS subsistema, s.activo AS subsistema_activo,
+         c.nombre AS clase, c.activo AS clase_activa,
+         m.nombre AS metodo, m.descripcion
+  FROM metodo m
+  JOIN clase c ON c.id = m.clase_id
+  JOIN subsistema s ON s.id = c.subsistema_id
+  WHERE m.id = $1
+
+findPerfilById: |
+  SELECT id, nombre_perfil, descripcion, activo
+  FROM perfil
+  WHERE id = $1
+
+findPermisosMetodoPorPerfil: |
+  SELECT pm.metodo_id
+  FROM permiso_metodo pm
+  JOIN metodo m ON m.id = pm.metodo_id
+  JOIN clase c ON c.id = m.clase_id
+  JOIN subsistema s ON s.id = c.subsistema_id
+  WHERE pm.perfil_id = $1
+    AND m.activo AND c.activo AND s.activo
+  ORDER BY pm.metodo_id
+
+insertPermisoMetodo: |
+  INSERT INTO permiso_metodo (perfil_id, metodo_id)
+  VALUES ($1, $2)
+  ON CONFLICT DO NOTHING
+  RETURNING perfil_id, metodo_id
+
+deletePermisoMetodo: |
+  DELETE FROM permiso_metodo
+  WHERE perfil_id = $1 AND metodo_id = $2
+  RETURNING perfil_id, metodo_id
