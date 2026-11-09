@@ -128,7 +128,8 @@ test("registrar rechaza un perfil inexistente o inactivo", async () => {
 
 test("registrar asigna los perfiles en la misma transacción", async () => {
   const db = crearDbFalso({ perfilesActivos: [1, 2] });
-  const usuario = new User(db, {});
+  // El solicitante es Superusuario: el perfil 2 lo es en el doble de la BD.
+  const usuario = new User(db, crearReq({ profiles: [2] }));
 
   // Repetido a propósito: se deduplica antes de insertar.
   const resultado = await usuario.registrar({
@@ -141,6 +142,48 @@ test("registrar asigna los perfiles en la misma transacción", async () => {
   const insercion = db.llamadas.find((l) => l.texto === queries.insertUsuarioPerfil || (typeof l.texto === "string" && l.texto.includes("INSERT INTO usuario_perfil")));
   assert.ok(insercion);
   assert.deepEqual(insercion.params, [200, [1, 2]]);
+});
+
+test("registrar impide que un no Superusuario asigne perfiles privilegiados", async () => {
+  const db = crearDbFalso({
+    nombresPerfil: { 1: "Empleado", 2: "Administrador", 3: "GerenteRRHH" },
+  });
+  const usuario = new User(db, crearReq({ profiles: [3] }));
+
+  for (const perfiles of [[2], [1, 2], [3]]) {
+    await assert.rejects(
+      () => usuario.registrar({ ...base, perfiles, password: "abcdefg1" }),
+      (error) => {
+        assert.ok(error instanceof ErrorNegocio);
+        assert.equal(error.status, 403);
+        assert.match(error.message, /Solo Superusuario/i);
+        return true;
+      },
+      `perfiles ${JSON.stringify(perfiles)}`,
+    );
+  }
+
+  assert.equal(
+    db.llamadas.some((l) => l.texto === queries.insertUsuario),
+    false,
+    "no inserta el usuario cuando la asignación escala privilegios",
+  );
+});
+
+test("registrar permite a Superusuario asignar perfiles privilegiados", async () => {
+  const db = crearDbFalso({
+    nombresPerfil: { 1: "Superusuario", 2: "Administrador" },
+  });
+  const usuario = new User(db, crearReq({ profiles: [1] }));
+
+  const resultado = await usuario.registrar({
+    ...base,
+    perfiles: [2],
+    password: "abcdefg1",
+  });
+
+  assert.deepEqual(resultado.perfiles, [2]);
+  assert.ok(db.llamadas.some((l) => l.texto === queries.insertUsuario));
 });
 
 test("cambiarClave exige sesión", async () => {

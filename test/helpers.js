@@ -66,6 +66,7 @@ function crearDbFalso({
   opciones = [],
   sesionPorUsuario = null,
   perfilesActivos = null,
+  nombresPerfil = null,
   refresco = null,
 } = {}) {
   const llamadas = [];
@@ -155,7 +156,15 @@ function crearDbFalso({
       }
       if (texto === queries.findActiveProfilesByIds || (typeof texto === "string" && texto.includes("FROM perfil") && texto.includes("ANY($1::int[])"))) {
         const ids = perfilesActivos ?? params[0];
-        return { rows: ids.map((id) => ({ id })) };
+        const nombre = (id) =>
+          nombresPerfil?.[id] ?? (id === 2 ? "Superusuario" : `Perfil ${id}`);
+        return {
+          rows: ids.map((valor) =>
+            typeof valor === "object"
+              ? valor
+              : { id: valor, nombre_perfil: nombre(valor) },
+          ),
+        };
       }
       if (texto === queries.insertPersona || (typeof texto === "string" && texto.includes("INSERT INTO persona"))) {
         return { rows: [{ id: 100 }] };
