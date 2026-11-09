@@ -339,19 +339,19 @@ findSubsistemaById: |
 insertOpcion: |
   INSERT INTO opcion (subsistema_id, nombre, descripcion, orden)
   VALUES ($1, $2, $3, $4)
-  RETURNING id, nombre, descripcion, orden, activo
+  RETURNING id, subsistema_id, nombre, descripcion, orden, activo
 
 updateOpcion: |
   UPDATE opcion
      SET nombre = $1, descripcion = $2, orden = $3
    WHERE id = $4
-  RETURNING id, nombre, descripcion, orden, activo
+  RETURNING id, subsistema_id, nombre, descripcion, orden, activo
 
 updateOpcionActivo: |
   UPDATE opcion
      SET activo = $1
    WHERE id = $2
-  RETURNING id, nombre, descripcion, orden, activo
+  RETURNING id, subsistema_id, nombre, descripcion, orden, activo
 
 # ---------------------------------------------------------------------------
 # Asignación perfil ↔ opción

@@ -202,6 +202,7 @@ try {
     true,
     0,
   ]);
+  check("opción creada con su subsistema", creada.body.subsistemaId, payroll.subsistemaId);
   check("opción en BD", Boolean(await opcionEnBd(creada.body.id)), true);
 
   const duplicada = await ejecutar(cliente, "Security", "Admin", "crearOpcion", [
@@ -297,6 +298,7 @@ try {
   ]);
   check("editarOpcion", editada.status, 200);
   check("nombre editado", editada.body.nombre, OPCION_EDITADA);
+  check("subsistema conservado", editada.body.subsistemaId, payroll.subsistemaId);
   check("nombre editado en BD", (await opcionEnBd(creada.body.id)).nombre, OPCION_EDITADA);
   check("llave vieja fuera del mapa", security.PermissionOptionMap.has(
     llaveOpcion(SUBSISTEMA_PAYROLL, OPCION, perfil.body.id),
