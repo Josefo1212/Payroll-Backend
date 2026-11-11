@@ -141,6 +141,20 @@ no se pueden quitar, renombrar ni desactivar en `Superusuario` (`409`), y
 `METODOS_CRITICOS` incluye los ocho métodos nuevos. `pnpm test` 133/133 y
 `scripts/manual/opciones_e2e.mjs` 62/62 → `OPCIONES E2E OK`.
 
+**Horas extras (2026-11-10):** `Payroll/Hours` suma `registrarExtra`,
+`listarExtrasPorPeriodo` y `quitarExtra`, exclusivos de `Superusuario`. No hay
+cambio de esquema: la extra se guarda en `registro_horas.horas_extra` y el
+`UNIQUE (persona_id, fecha)` obliga a un **upsert** que suma sobre la fila del
+día (si RRHH ya registró horas normales, se conservan). `quitarExtra` pone
+`horas_extra = 0` y solo borra la fila si `horas_normales = 0`. La migración
+`db/migrations/012_horas_extras.sql` (solo datos, idempotente) siembra los tres
+métodos, sus permisos y la opción de menú `HorasExtras` (Payroll, orden 9),
+todos solo para `Superusuario`. La pantalla actual `Horas` se mantiene igual
+para RRHH y Superusuario. Front: `OvertimePage` en `/payroll/horas-extras`,
+con guard por nombre de perfil porque `Administrador` comparte el rol
+`superuser`. `pnpm test` 145/145 y `scripts/manual/horas_extras_e2e.mjs` 42/42
+→ `HORAS EXTRAS E2E OK`.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
 consultas de `queries.yaml` a los BO.
 
@@ -455,11 +469,57 @@ o datos desechables), y ninguna prueba depende de otra.
 - **El nombre de una opción no puede llevar `_`.** La llave del mapa usa `_`
   como separador; permitirlo volvería ambiguas dos combinaciones distintas.
   Se valida 2–80 alfanuméricos empezando por letra.
+- **`registro_horas` tiene `UNIQUE (persona_id, fecha)`.** Cualquier alta de
+  horas para un día ya registrado debe ser upsert; un `INSERT` responde `23505`
+  y, si se ignora, la extra se pierde. `registrarExtra` suma sobre la fila
+  existente y conserva `horas_normales`.
+- **`Horas.eliminar` borra la fila completa.** Para quitar solo la extra hay
+  que mirar `horas_normales`: si es 0 se borra, si es > 0 se actualiza
+  `horas_extra = 0`. Reutilizar `eliminar` habría destruido las horas normales
+  de RRHH.
+- **El rol `superuser` del front no distingue Administrador de Superusuario.**
+  `profileToRole` mapea ambos a `superuser`; una pantalla exclusiva del segundo
+  necesita `hasProfile(user, 'Superusuario')` además del `RoleRoute`. La
+  autorización real sigue en `permiso_metodo`/`permiso_opcion`.
 
 ## Decisiones de diseño
 
 Registro de decisiones con su motivo. Las viejas no se editan: si una cambia,
 se agrega una nueva que la reemplaza.
+
+### 2026-11-10
+
+- **Las horas extras reutilizan `registro_horas.horas_extra`.** No se crea una
+  tabla `registro_hora_extra` ni cambia el esquema. Motivo: la columna ya
+  existe, el cálculo del recibo ya paga `horas_extra × tarifa × 1.5` y una
+  tabla paralela obligaría a tocar `Period.procesar` y el espejo DBML. La
+  migración `012_horas_extras.sql` es solo de datos.
+- **`registrarExtra` hace upsert, no insert.** El `UNIQUE (persona_id, fecha)`
+  impide una segunda fila para el mismo día. Si RRHH ya registró horas
+  normales, la extra se **suma** sobre esa fila con
+  `ON CONFLICT ... DO UPDATE`; así no se pierden las normales ni se duplica el
+  sueldo base de un contrato `POR_HORA`.
+- **`quitarExtra` conserva las horas normales.** Si `horas_normales > 0` pone
+  `horas_extra = 0`; solo borra la fila completa cuando el día tenía únicamente
+  extras. Motivo: reutilizar `Hours.eliminar` habría borrado también las horas
+  normales que RRHH registró.
+- **La pantalla de extras es un acceso adicional, no un reemplazo.** La
+  pantalla `Horas` sigue igual para RRHH y Superusuario (horas normales y
+  extra). Las extras quedan además en una pantalla exclusiva de
+  `Superusuario`. Motivo: pedido explícito; centralizar las extras sin quitarle
+  a RRHH el registro diario.
+- **Permiso y menú solo para `Superusuario`.** Los tres métodos se siembran con
+  `permiso_metodo` únicamente para ese perfil y la opción `HorasExtras`
+  (Payroll, orden 9) solo con `permiso_opcion` para él. El E2E comprueba que
+  RRHH recibe `403` en los tres métodos y no ve la opción.
+- **Guard fino en el front por nombre de perfil.** `RoleRoute allow=
+  {['superuser']}` deja pasar también a `Administrador` (se mapea a
+  `superuser`), por eso `OvertimePage` valida `hasProfile(user,
+  'Superusuario')` y muestra una tarjeta de acceso restringido. El servidor
+  sigue siendo la autoridad: ocultar el menú no revoca el método.
+- **`listarExtrasPorPeriodo` filtra `horas_extra > 0`.** Devuelve las filas
+  mixtas (con normales y extras) para que el front pueda avisar si al quitar
+  la extra se conservan las normales o se elimina la fila.
 
 ### 2026-11-09
 

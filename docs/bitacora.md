@@ -291,3 +291,32 @@ es. Orden cronológico.
 - El E2E real destapó un `GROUP BY` incompleto en `findAllOptionsAdmin`
   (`s.id` faltaba) que la base falsa no podía ver: PostgreSQL respondía
   `42803`. Corregido y documentado en `AGENTS.md`.
+
+### Horas extras (2026-11-10)
+
+- `Payroll/Hours` suma `registrarExtra`, `listarExtrasPorPeriodo` y
+  `quitarExtra`, exclusivos de `Superusuario`. No hay cambio de esquema: la
+  extra se guarda en `registro_horas.horas_extra` (migración 004) y el
+  `UNIQUE (persona_id, fecha)` obliga a un upsert que **suma** sobre la fila
+  del día; si RRHH ya registró horas normales, se conservan.
+- `quitarExtra` pone `horas_extra = 0` cuando el día tiene horas normales y
+  solo elimina la fila cuando tenía únicamente extras. Reutilizar
+  `Hours.eliminar` habría borrado también las normales.
+- `db/migrations/012_horas_extras.sql` es solo de datos e idempotente:
+  siembra los tres métodos, sus `permiso_metodo` y la opción de menú
+  `HorasExtras` (Payroll, orden 9), todo solo para `Superusuario`. La opción
+  actual `Horas` (RRHH y Superusuario) se mantiene sin cambios.
+- Front: `OvertimePage` en `/payroll/horas-extras`, `HoursService` suma
+  `registrarExtra`, `listarExtrasPorPeriodo` y `quitarExtra`, y el menú mapea
+  `HorasExtras`. El `RoleRoute allow={['superuser']}` deja pasar también a
+  `Administrador`; por eso la página valida por nombre de perfil
+  (`hasProfile(user, 'Superusuario')`). El backend sigue validando el permiso
+  real.
+- Verificación: `pnpm test` **145/145** (12 casos nuevos en
+  `test/horasExtras.test.js`) y `node scripts/manual/horas_extras_e2e.mjs
+  --yes` **42/42 → HORAS EXTRAS E2E OK**. El E2E comprueba el upsert, el
+  listado por período, que RRHH recibe `403` en los tres métodos, que la
+  pantalla `Horas` de RRHH sigue funcionando, que quitar conserva las horas
+  normales y que la opción es invisible para RRHH.
+- La migración 012 se aplicó sobre el branch de desarrollo de Neon (no había
+  `neonctl` ni API key en el entorno); es aditiva e idempotente.
