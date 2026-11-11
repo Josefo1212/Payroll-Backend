@@ -78,6 +78,38 @@ deleteRegistroHoras: |
   WHERE id = $1
   RETURNING id
 
+# Horas extras. El UNIQUE (persona_id, fecha) obliga a upsert: si la persona
+# ya tiene horas normales ese día, la extra se suma sobre la misma fila.
+upsertHorasExtra: |
+  INSERT INTO registro_horas
+    (persona_id, fecha, horas_normales, horas_extra, observacion, registrado_por)
+  VALUES ($1, $2, 0, $3, $4, $5)
+  ON CONFLICT (persona_id, fecha) DO UPDATE
+     SET horas_extra = registro_horas.horas_extra + EXCLUDED.horas_extra,
+         observacion = COALESCE(EXCLUDED.observacion, registro_horas.observacion)
+  RETURNING id, persona_id, fecha, horas_normales, horas_extra, observacion, created_at
+
+findRegistroHorasConHoras: |
+  SELECT id, persona_id, fecha, horas_normales, horas_extra
+  FROM registro_horas
+  WHERE id = $1
+
+updateHorasExtra: |
+  UPDATE registro_horas
+     SET horas_extra = $2
+   WHERE id = $1
+  RETURNING id, persona_id, fecha, horas_normales, horas_extra, observacion, created_at
+
+findExtrasPorPeriodo: |
+  SELECT rh.id, rh.persona_id, rh.fecha, rh.horas_normales, rh.horas_extra,
+         rh.observacion, rh.created_at,
+         p.cedula, p.primer_nombre, p.primer_apellido
+  FROM registro_horas rh
+  JOIN persona p ON p.id = rh.persona_id
+  WHERE rh.fecha BETWEEN $1 AND $2
+    AND rh.horas_extra > 0
+  ORDER BY rh.fecha, p.primer_apellido, p.primer_nombre
+
 # ---------------------------------------------------------------------------
 # Conceptos y recurrentes
 # ---------------------------------------------------------------------------

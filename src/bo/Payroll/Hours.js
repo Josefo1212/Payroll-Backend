@@ -96,6 +96,94 @@ export class Hours {
     }
   }
 
+  async registrarExtra(personaId, fecha, horasExtra, observacion = null) {
+    const usuarioId = this.#req?.session?.userID;
+    if (!usuarioId) {
+      throw new ErrorNegocio("Debes iniciar sesión.", 401);
+    }
+    if (typeof personaId !== "string" || personaId.trim() === "") {
+      throw new ErrorNegocio("persona_id es obligatorio.", 400);
+    }
+    this.#validarFecha(fecha, "fecha");
+
+    const extra = Number(horasExtra);
+    if (!Number.isFinite(extra)) {
+      throw new ErrorNegocio("Las horas extra deben ser un número.", 400);
+    }
+    if (extra <= 0) {
+      throw new ErrorNegocio("Las horas extra deben ser mayores que cero.", 400);
+    }
+    if (extra > 999.99) {
+      throw new ErrorNegocio("Las horas extra exceden el máximo permitido.", 400);
+    }
+
+    await this.#exigirDiaEditable(fecha);
+
+    try {
+      const { rows } = await this.#db.query(queries.upsertHorasExtra, [
+        personaId,
+        fecha,
+        extra.toFixed(2),
+        observacion,
+        usuarioId,
+      ]);
+      return rows[0];
+    } catch (error) {
+      if (error?.code === "23503") {
+        throw new ErrorNegocio("La persona no existe.", 400);
+      }
+      if (error?.code === "22003") {
+        throw new ErrorNegocio("Las horas extra acumuladas exceden el máximo permitido.", 400);
+      }
+      throw error;
+    }
+  }
+
+  async listarExtrasPorPeriodo(periodoId) {
+    if (typeof periodoId !== "string" || periodoId.trim() === "") {
+      throw new ErrorNegocio("periodo_id es obligatorio.", 400);
+    }
+
+    const { rows } = await this.#db.query(queries.findPeriodoById, [periodoId]);
+    const periodo = rows[0];
+    if (!periodo) {
+      throw new ErrorNegocio("El período no existe.", 404);
+    }
+
+    const { rows: extras } = await this.#db.query(queries.findExtrasPorPeriodo, [
+      aFechaISO(periodo.fecha_inicio),
+      aFechaISO(periodo.fecha_fin),
+    ]);
+    return extras;
+  }
+
+  async quitarExtra(id) {
+    if (typeof id !== "string" || id.trim() === "") {
+      throw new ErrorNegocio("El id del registro es obligatorio.", 400);
+    }
+
+    const { rows } = await this.#db.query(queries.findRegistroHorasConHoras, [id]);
+    const registro = rows[0];
+    if (!registro) {
+      throw new ErrorNegocio("El registro de horas no existe.", 404);
+    }
+    if (Number(registro.horas_extra) <= 0) {
+      throw new ErrorNegocio("El registro no tiene horas extra para quitar.", 409);
+    }
+
+    await this.#exigirDiaEditable(registro.fecha);
+
+    // Si el día solo tenía extras, la fila completa deja de existir; si
+    // también había horas normales, se conservan y solo se limpia la extra.
+    if (Number(registro.horas_normales) <= 0) {
+      await this.#db.query(queries.deleteRegistroHoras, [id]);
+      return { ok: true, id, eliminado: true };
+    }
+
+    await this.#db.query(queries.updateHorasExtra, [id, "0.00"]);
+    return { ok: true, id, eliminado: false };
+  }
+
   async listarPorPersona(personaId, fechaInicio, fechaFin) {
     if (typeof personaId !== "string" || personaId.trim() === "") {
       throw new ErrorNegocio("persona_id es obligatorio.", 400);
