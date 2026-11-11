@@ -1,13 +1,13 @@
 // E2E de horas extras por HTTP, contra la BD apuntada por DATABASE_URL.
-// Requiere las migraciones 001–012 aplicadas y el usuario de prueba
+// Requiere las migraciones 001–013 aplicadas y el usuario de prueba
 // (db/seed-usuario-prueba.sql). Escribe en la BD: usar un branch desechable.
 //
 //   node scripts/manual/horas_extras_e2e.mjs --yes
 //
-// Verifica: solo Superusuario registra/lista/quita extras, el upsert suma
-// sobre la fila del día, quitar conserva las horas normales, la pantalla
-// actual de Horas sigue funcionando para RRHH y la opción de menú es
-// exclusiva de Superusuario. Limpia sus datos al final.
+// Verifica: Superusuario y RRHH registran/listan/quitan extras, el upsert
+// suma sobre la fila del día, quitar conserva las horas normales, la pantalla
+// actual de Horas sigue funcionando para RRHH y la opción de menú es visible
+// para ambos. Limpia sus datos al final.
 import "./_guard.mjs";
 import app from "../../src/app.js";
 import { security } from "../../src/security/Security.js";
@@ -22,6 +22,7 @@ const PERIODO = {
 };
 const DIA_EXTRA = "2032-05-03";
 const DIA_MIXTO = "2032-05-04";
+const DIA_RRHH = "2032-05-05";
 
 const PERSONAS = [
   {
@@ -252,23 +253,27 @@ try {
   check("fila del empleado", listado1.body[0].persona_id, personaId);
   check("monto del listado", listado1.body[0].horas_extra, "3.75");
 
-  // --- Solo Superusuario --------------------------------------------------
+  // --- RRHH también registra, lista y quita extras -----------------------
   const rrhhRegistra = await ejecutar(rrhh, "Payroll", "Hours", "registrarExtra", [
     personaRrhhId,
-    DIA_EXTRA,
+    DIA_RRHH,
     1,
   ]);
-  check("RRHH no registra extras", rrhhRegistra.status, 403);
+  check("RRHH registra extras", rrhhRegistra.status, 200);
 
   const rrhhLista = await ejecutar(rrhh, "Payroll", "Hours", "listarExtrasPorPeriodo", [
     periodoId,
   ]);
-  check("RRHH no lista extras", rrhhLista.status, 403);
+  check("RRHH lista extras", rrhhLista.status, 200);
+  check("RRHH ve las extras del período", rrhhLista.body.length, 2);
+  const filaRrhh = rrhhLista.body.find((fila) => fila.persona_id === personaRrhhId);
+  check("fila de RRHH existe", Boolean(filaRrhh), true);
 
   const rrhhQuita = await ejecutar(rrhh, "Payroll", "Hours", "quitarExtra", [
-    listado1.body[0].id,
+    filaRrhh.id,
   ]);
-  check("RRHH no quita extras", rrhhQuita.status, 403);
+  check("RRHH quita su extra", rrhhQuita.status, 200);
+  check("RRHH elimina la fila", rrhhQuita.body.eliminado, true);
 
   // --- La pantalla actual de Horas sigue funcionando para RRHH -----------
   const normales = await ejecutar(rrhh, "Payroll", "Hours", "registrar", [
@@ -329,7 +334,7 @@ try {
   ]);
   check("quitar registro inexistente", quitarInexistente.status, 404);
 
-  // --- Menú: la opción es exclusiva de Superusuario ----------------------
+  // --- Menú: la opción es visible para Superusuario y RRHH ---------------
   const menuAdmin = await ejecutar(admin, "Security", "Menu", "getOptions");
   check("menú admin", menuAdmin.status, 200);
   check(
@@ -341,9 +346,9 @@ try {
   const menuRrhh = await ejecutar(rrhh, "Security", "Menu", "getOptions");
   check("menú rrhh", menuRrhh.status, 200);
   check(
-    "RRHH no ve HorasExtras",
+    "RRHH ve HorasExtras",
     menuRrhh.body.some((opcion) => opcion.nombre === "HorasExtras"),
-    false,
+    true,
   );
 
 } finally {

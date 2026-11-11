@@ -320,3 +320,45 @@ es. Orden cronológico.
   normales y que la opción es invisible para RRHH.
 - La migración 012 se aplicó sobre el branch de desarrollo de Neon (no había
   `neonctl` ni API key en el entorno); es aditiva e idempotente.
+
+### Menú por perfil activo y horas extras para RRHH (2026-11-10)
+
+- **Bug del sidebar.** El front filtraba el menú por **rol**
+  (`menuStore.fetchMenu(role)`) y para `rrhh` dejaba pasar `Payroll` y
+  `Security`, mientras que `superuser` lo dejaba pasar todo. Como
+  `Superusuario`/`Administrador` comparten `superuser` y `RRHH`/`GerenteRRHH`
+  comparten `rrhh`, al cambiar de perfil seguía apareciendo `Seguridad` aunque
+  el perfil activo no tuviera esas opciones.
+- **Fix backend.** `Security/Menu/getOptions(perfilId)` valida que el perfil
+  pertenezca a `req.session.profiles` (`403` si no) y devuelve solo sus
+  opciones; un `perfilId` no entero responde `400` y sin sesión devuelve `[]`.
+  Sin argumento conserva la unión de perfiles (compatibilidad y menú anónimo).
+  Cuatro casos nuevos en `test/menu.test.js`.
+- **Fix front.** `SecurityService.getMenuOptions(perfilId)`,
+  `menuStore.fetchMenu(perfilId, force?)` con caché por perfil (invalidada
+  entera al forzar), `SidebarNav` recibe `perfilId` desde
+  `user.activeProfile.id`, y `OptionsPage` refresca con el perfil activo. Se
+  eliminó el filtro por rol. El fallback de carga ya no inyecta `Seguridad`:
+  solo dibuja el bloque común "Mi espacio" mientras llega la primera
+  respuesta.
+- **Horas extras para RRHH.** `db/migrations/013_horas_extras_rrhh.sql`
+  concede `registrarExtra`, `listarExtrasPorPeriodo`, `quitarExtra` y la opción
+  `HorasExtras` a `RRHH`/`GerenteRRHH`. Aplicada y verificada en Neon:
+  `HorasExtras` → RRHH y Superusuario; los tres métodos → RRHH y Superusuario.
+  `AppRouter` permite `/payroll/horas-extras` a `['superuser','rrhh']` y
+  `OvertimePage` valida por nombre (`Superusuario`, `RRHH`, `GerenteRRHH`);
+  `Administrador` sigue viendo la tarjeta de acceso restringido.
+- **Verificación.** `pnpm test` **149/149** y
+  `node scripts/manual/menu_perfil_e2e.mjs` **30/30 → MENU PERFIL E2E OK**
+  (script de solo lectura que pide el menú de cada perfil de `admin_prueba`).
+  Prueba real con `admin_prueba`
+  (todos los perfiles) contra `POST /api/execute`:
+  Superusuario `[1]` → Nómina + Seguridad completa + `HorasExtras`;
+  Administrador `[2]` → Nómina + `Usuarios`/`Perfiles`, sin `HorasExtras`;
+  RRHH `[3]` → Nómina + `HorasExtras` + `Registrar personas`/`Usuarios`;
+  Empleado `[4]` → solo `MisRecibos`; perfil ajeno `99` → `403`. Verificado
+  también en el navegador cambiando de perfil en el sidebar. Front:
+  `pnpm typecheck` y `pnpm build` OK.
+- **Nota de orden.** La 012 revierte `HorasExtras` a los perfiles distintos de
+  Superusuario; la 013 debe correr después. Volver a ejecutar la 012 sobre una
+  base con la 013 quitaría el acceso a RRHH y habría que reaplicar la 013.

@@ -88,3 +88,39 @@ test("getOptions con un solo perfil no incluye lo de otros", async () => {
     "la opción 11 es solo del perfil 2",
   );
 });
+
+test("getOptions(perfilId) devuelve solo las opciones de ese perfil", async () => {
+  const menu = await crearMenu({ userID: "u-1", profiles: [1, 2] });
+
+  const opciones = menu.getOptions(2);
+
+  assert.deepEqual(
+    opciones.map((o) => o.id),
+    [11, 20],
+    "no incluye las opciones exclusivas del perfil 1",
+  );
+});
+
+test("getOptions rechaza un perfil que no pertenece a la sesión", async () => {
+  const menu = await crearMenu({ userID: "u-1", profiles: [1] });
+
+  assert.throws(
+    () => menu.getOptions(2),
+    (error) => error.status === 403 && /no pertenece/.test(error.message),
+  );
+});
+
+test("getOptions valida que el perfilId sea un entero positivo", async () => {
+  const menu = await crearMenu({ userID: "u-1", profiles: [1] });
+
+  assert.throws(
+    () => menu.getOptions("abc"),
+    (error) => error.status === 400,
+  );
+});
+
+test("getOptions(perfilId) sin sesión devuelve []", async () => {
+  const menu = await crearMenu();
+
+  assert.deepEqual(menu.getOptions(1), []);
+});

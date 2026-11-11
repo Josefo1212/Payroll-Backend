@@ -142,17 +142,18 @@ no se pueden quitar, renombrar ni desactivar en `Superusuario` (`409`), y
 `scripts/manual/opciones_e2e.mjs` 62/62 → `OPCIONES E2E OK`.
 
 **Horas extras (2026-11-10):** `Payroll/Hours` suma `registrarExtra`,
-`listarExtrasPorPeriodo` y `quitarExtra`, exclusivos de `Superusuario`. No hay
+`listarExtrasPorPeriodo` y `quitarExtra`. No hay
 cambio de esquema: la extra se guarda en `registro_horas.horas_extra` y el
 `UNIQUE (persona_id, fecha)` obliga a un **upsert** que suma sobre la fila del
 día (si RRHH ya registró horas normales, se conservan). `quitarExtra` pone
 `horas_extra = 0` y solo borra la fila si `horas_normales = 0`. La migración
 `db/migrations/012_horas_extras.sql` (solo datos, idempotente) siembra los tres
-métodos, sus permisos y la opción de menú `HorasExtras` (Payroll, orden 9),
-todos solo para `Superusuario`. La pantalla actual `Horas` se mantiene igual
+métodos, sus permisos y la opción de menú `HorasExtras` (Payroll, orden 9) para
+`Superusuario`; la `013_horas_extras_rrhh.sql` extiende métodos y opción a
+`RRHH`/`GerenteRRHH`. La pantalla `Horas` se mantiene igual
 para RRHH y Superusuario. Front: `OvertimePage` en `/payroll/horas-extras`,
 con guard por nombre de perfil porque `Administrador` comparte el rol
-`superuser`. `pnpm test` 145/145 y `scripts/manual/horas_extras_e2e.mjs` 42/42
+`superuser`. `pnpm test` 149/149 y `scripts/manual/horas_extras_e2e.mjs` 45/45
 → `HORAS EXTRAS E2E OK`.
 
 **Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
@@ -481,6 +482,21 @@ o datos desechables), y ninguna prueba depende de otra.
   `profileToRole` mapea ambos a `superuser`; una pantalla exclusiva del segundo
   necesita `hasProfile(user, 'Superusuario')` además del `RoleRoute`. La
   autorización real sigue en `permiso_metodo`/`permiso_opcion`.
+- **El menú se filtra por perfil activo, no por rol.** `Superusuario` y
+  `Administrador` comparten el rol `superuser`, y `RRHH`/`GerenteRRHH`
+  comparten `rrhh`; filtrar por rol en el front mezclaba perfiles distintos y
+  dejaba ver `Seguridad` a `Empleado` o `RRHH`. `Security/Menu/getOptions`
+  acepta un `perfilId` opcional, valida que pertenezca a `req.session.profiles`
+  (`403` si no) y devuelve solo las opciones de ese perfil. Sin argumento
+  conserva la unión de perfiles (compatibilidad y menú anónimo vacío).
+- **`getOptions(perfilId)` no confía en el cliente.** El `perfilId` se valida
+  como entero positivo (`400`) y contra los perfiles reales de la sesión
+  (`403`). Un usuario con varios perfiles no puede pedir el menú de uno que no
+  tiene; el backend sigue siendo la autoridad.
+- **La caché del menú en el front es por `perfilId`, no por rol.** Al cambiar
+  de perfil se reutiliza la respuesta cacheada de ese perfil y se invalida
+  entera cuando la administración de opciones fuerza un refresco (`force`),
+  porque el cambio pudo afectar a cualquier perfil del usuario.
 
 ## Decisiones de diseño
 
@@ -489,6 +505,23 @@ se agrega una nueva que la reemplaza.
 
 ### 2026-11-10
 
+- **El sidebar se filtra por perfil activo, no por rol.** `Security/Menu/getOptions`
+  acepta un `perfilId` opcional: valida que pertenezca a la sesión (`403`) y
+  devuelve solo las opciones de ese perfil. El front manda
+  `user.activeProfile.id` y cachea el menú por perfil. Motivo: `Superusuario` y
+  `Administrador` comparten el rol `superuser`, y `RRHH`/`GerenteRRHH` el rol
+  `rrhh`; el filtro por rol dejaba ver `Seguridad` a perfiles que no la tienen
+  asignada. Sin argumento, `getOptions` conserva la unión de perfiles para no
+  romper el menú anónimo ni a los clientes viejos.
+- **Horas extras también para RRHH.** La `013_horas_extras_rrhh.sql` concede
+  los tres métodos de `Payroll/Hours` y la opción `HorasExtras` a `RRHH` y
+  `GerenteRRHH`. Motivo: RRHH registra las horas del personal y la 012 los
+  había dejado fuera. `Administrador` sigue sin acceso (no se pidió) y la
+  pantalla valida por nombre de perfil porque comparte el rol `superuser`.
+- **La caché del menú se invalida completa al forzar un refresco.** Editar una
+  opción desde `Security/Admin` puede afectar a cualquier perfil del usuario,
+  no solo al activo; `fetchMenu(perfilId, true)` limpia la caché y vuelve a
+  pedir el perfil activo.
 - **Las horas extras reutilizan `registro_horas.horas_extra`.** No se crea una
   tabla `registro_hora_extra` ni cambia el esquema. Motivo: la columna ya
   existe, el cálculo del recibo ya paga `horas_extra × tarifa × 1.5` y una
