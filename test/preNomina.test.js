@@ -208,7 +208,11 @@ function crearDb({
   cuotas = [],
   afiliaciones = [],
   parametros = [],
+  novedadesFuera = 0,
+  cuotasFuera = 0,
+  prestamosPagados = 0,
   errorInsertPreNomina = null,
+  errorDetalleRecibo = null,
 } = {}) {
   const llamadas = [];
   const estado = { borrador, recibos: [...recibos], detalles: [...detalles] };
@@ -375,6 +379,72 @@ function crearDb({
           fecha_actualizacion: "2031-01-01T11:00:00.000Z",
         };
         return { rows: [{ version: estado.borrador.version }] };
+      }
+      if (texto === queries.deletePreNomina) {
+        const borrador = estado.borrador;
+        estado.borrador = null;
+        estado.recibos = [];
+        estado.detalles = [];
+        return {
+          rows: borrador
+            ? [{ id: borrador.id, periodo_nomina_id: borrador.periodo_nomina_id }]
+            : [],
+        };
+      }
+      if (texto === queries.findNovedadesAprobadasFueraDelBorrador) {
+        return { rows: [{ total: novedadesFuera }] };
+      }
+      if (texto === queries.findCuotasPendientesFueraDelBorrador) {
+        return { rows: [{ total: cuotasFuera }] };
+      }
+      if (texto === queries.insertRecibo) {
+        secuencia += 1;
+        return {
+          rows: [
+            {
+              id: `final-${secuencia}`,
+              persona_id: params[0],
+              periodo_nomina_id: params[1],
+              contrato_id: params[2],
+              total_asignaciones: params[4],
+              total_deducciones: params[5],
+              monto_total: params[6],
+              estado: "PENDIENTE",
+            },
+          ],
+        };
+      }
+      if (texto === queries.insertDetalleRecibo) {
+        if (errorDetalleRecibo) {
+          throw errorDetalleRecibo;
+        }
+        secuencia += 1;
+        return { rows: [{ id: `detalle-final-${secuencia}` }] };
+      }
+      if (texto === queries.marcarNovedadAplicadaPorId) {
+        return { rows: [{ id: params[0] }] };
+      }
+      if (texto === queries.marcarCuotaDescontada) {
+        return { rows: [{ id: params[0] }] };
+      }
+      if (texto === queries.marcarPrestamosPagados) {
+        return {
+          rows: Array.from({ length: prestamosPagados }, (_, indice) => ({
+            id: `prestamo-${indice + 1}`,
+          })),
+        };
+      }
+      if (texto === queries.updatePeriodoEstado) {
+        return {
+          rows: [
+            {
+              id: params[0],
+              estado: params[1],
+              procesado_por: params[2],
+              fecha_proceso: params[3],
+            },
+          ],
+        };
       }
 
       throw new Error(`Consulta no simulada: ${texto}`);
@@ -1052,4 +1122,192 @@ test("guardar una ley que baja a cero la borra en vez de escribir 0", async () =
   );
   assert.deepEqual(borradas.sort(), [L.leySso, L.leyPatronal].sort());
   assert.equal(llamadasDe(db, queries.updatePreNominaDetalleLey).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// eliminar
+// ---------------------------------------------------------------------------
+
+test("eliminar borra el borrador sin tocar período, novedades ni cuotas", async () => {
+  const db = crearDb(borradorBase());
+
+  const respuesta = await new PreNomina(db, reqConSesion()).eliminar(PRE_NOMINA_ID);
+
+  assert.deepEqual(respuesta, {
+    eliminada: true,
+    preNominaId: PRE_NOMINA_ID,
+    periodoId: PERIODO_ID,
+  });
+  assert.equal(llamadasDe(db, queries.deletePreNomina).length, 1);
+  assert.equal(llamadasDe(db, queries.updatePeriodoEstado).length, 0);
+  assert.equal(llamadasDe(db, queries.marcarNovedadAplicadaPorId).length, 0);
+  assert.equal(llamadasDe(db, queries.marcarCuotaDescontada).length, 0);
+});
+
+test("eliminar un borrador inexistente responde 404", async () => {
+  const db = crearDb();
+
+  await rechazaCon(
+    new PreNomina(db, reqConSesion()).eliminar(PRE_NOMINA_ID),
+    404,
+    /no existe/,
+  );
+});
+
+test("eliminar con el período ya no BORRADOR responde 409", async () => {
+  const db = crearDb(
+    borradorBase({ periodo: { ...PERIODO, estado: "PROCESADO" } }),
+  );
+
+  await rechazaCon(
+    new PreNomina(db, reqConSesion()).eliminar(PRE_NOMINA_ID),
+    409,
+    /período en BORRADOR/,
+  );
+  assert.equal(llamadasDe(db, queries.deletePreNomina).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// confirmar
+// ---------------------------------------------------------------------------
+
+test("confirmar escribe el recibo final con las líneas del borrador", async () => {
+  const db = crearDb(borradorBase());
+
+  const respuesta = await new PreNomina(db, reqConSesion()).confirmar(
+    PRE_NOMINA_ID,
+    3,
+  );
+
+  assert.equal(respuesta.periodo.id, PERIODO_ID);
+  assert.equal(respuesta.periodo.estado, "PROCESADO");
+  assert.equal(respuesta.recibos.length, 2);
+  assert.equal(respuesta.preNominaEliminada, true);
+  assert.equal(llamadasDe(db, queries.deletePreNomina).length, 1);
+
+  const recibosFinales = llamadasDe(db, queries.insertRecibo).map((l) => l.params);
+  assert.equal(recibosFinales.length, 2);
+  assert.deepEqual(recibosFinales[0], [
+    PERSONA_ID,
+    PERIODO_ID,
+    CONTRATO_ID,
+    "2031-01-07",
+    "1200.00",
+    "158.00",
+    "1042.00",
+  ]);
+
+  const detalles = llamadasDe(db, queries.insertDetalleRecibo).map((l) => l.params);
+  // 7 líneas del recibo 1 + 2 del recibo 2.
+  assert.equal(detalles.length, 9);
+
+  // Ley: concepto 4, parámetro 7, base 950.00, tasa 0.0400, monto 38.00.
+  const ley = detalles.find((params) => params[0] === "final-1" && params[1] === 4);
+  assert.equal(ley[5], 7);
+  assert.equal(ley[6], "950.00");
+  assert.equal(ley[7], "0.0400");
+  assert.equal(ley[9], "38.00");
+
+  // Las FKs de origen viajan al recibo final.
+  assert.ok(detalles.some((params) => params[2] === "cuota-1"));
+  assert.ok(detalles.some((params) => params[3] === "novedad-1"));
+  assert.ok(detalles.some((params) => params[4] === "recurrente-1"));
+});
+
+test("confirmar marca solo las novedades y cuotas del borrador", async () => {
+  const db = crearDb(borradorBase({ prestamosPagados: 1 }));
+
+  const respuesta = await new PreNomina(db, reqConSesion()).confirmar(
+    PRE_NOMINA_ID,
+    3,
+  );
+
+  assert.deepEqual(
+    llamadasDe(db, queries.marcarNovedadAplicadaPorId).map((l) => l.params[0]),
+    ["novedad-1"],
+  );
+  assert.deepEqual(
+    llamadasDe(db, queries.marcarCuotaDescontada).map((l) => l.params[0]),
+    ["cuota-1"],
+  );
+  assert.equal(llamadasDe(db, queries.marcarPrestamosPagados).length, 1);
+  assert.equal(respuesta.novedadesAplicadas, 1);
+  assert.equal(respuesta.cuotasDescontadas, 1);
+  assert.equal(respuesta.prestamosPagados, 1);
+});
+
+test("confirmar con novedades aprobadas fuera del borrador responde 409", async () => {
+  const db = crearDb(borradorBase({ novedadesFuera: 2 }));
+
+  await rechazaCon(
+    new PreNomina(db, reqConSesion()).confirmar(PRE_NOMINA_ID, 3),
+    409,
+    /Hay 2 novedades aprobadas/,
+  );
+  assert.equal(llamadasDe(db, queries.insertRecibo).length, 0);
+});
+
+test("confirmar con cuotas vencidas fuera del borrador responde 409", async () => {
+  const db = crearDb(borradorBase({ cuotasFuera: 1 }));
+
+  await rechazaCon(
+    new PreNomina(db, reqConSesion()).confirmar(PRE_NOMINA_ID, 3),
+    409,
+    /Hay 1 cuota pendiente/,
+  );
+  assert.equal(llamadasDe(db, queries.insertRecibo).length, 0);
+});
+
+test("confirmar con version vieja responde 409 antes de escribir", async () => {
+  const db = crearDb(borradorBase());
+
+  await rechazaCon(
+    new PreNomina(db, reqConSesion()).confirmar(PRE_NOMINA_ID, 2),
+    409,
+    /cambió desde que la abriste/,
+  );
+  assert.equal(llamadasDe(db, queries.insertRecibo).length, 0);
+  assert.equal(llamadasDe(db, queries.deletePreNomina).length, 0);
+});
+
+test("confirmar con el período ya PROCESADO responde 409", async () => {
+  const db = crearDb(
+    borradorBase({ periodo: { ...PERIODO, estado: "PROCESADO" } }),
+  );
+
+  await rechazaCon(
+    new PreNomina(db, reqConSesion()).confirmar(PRE_NOMINA_ID, 3),
+    409,
+    /período en BORRADOR/,
+  );
+});
+
+test("confirmar un borrador sin recibos procesa el período igual", async () => {
+  const db = crearDb(borradorBase({ recibos: [], detalles: [] }));
+
+  const respuesta = await new PreNomina(db, reqConSesion()).confirmar(
+    PRE_NOMINA_ID,
+    3,
+  );
+
+  assert.equal(respuesta.recibos.length, 0);
+  assert.equal(respuesta.periodo.estado, "PROCESADO");
+  assert.equal(
+    llamadasDe(db, queries.updatePeriodoEstado)[0].params[1],
+    "PROCESADO",
+  );
+  assert.equal(llamadasDe(db, queries.deletePreNomina).length, 1);
+});
+
+test("confirmar traduce el 23505 de una cuota repetida a 409", async () => {
+  const error = Object.assign(new Error("duplicate key"), { code: "23505" });
+  const db = crearDb(borradorBase({ errorDetalleRecibo: error }));
+
+  await rechazaCon(
+    new PreNomina(db, reqConSesion()).confirmar(PRE_NOMINA_ID, 3),
+    409,
+    /ya fue descontada/,
+  );
+  assert.equal(llamadasDe(db, queries.updatePeriodoEstado).length, 0);
+  assert.equal(llamadasDe(db, queries.deletePreNomina).length, 0);
 });

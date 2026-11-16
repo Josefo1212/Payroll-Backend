@@ -3,6 +3,7 @@ import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { PayrollWriter } from "./PayrollWriter.js";
 import { payrollCalculator } from "../../services/PayrollCalculator.js";
+import { aFechaISO } from "./_fechas.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Una línea es editable si RRHH puede ajustarla. RECURRENTE, NOVEDAD,
@@ -112,7 +113,11 @@ export class PreNomina {
     return borrador;
   };
 
-  #exigirPeriodoBorrador = async (db, periodoId, { bloquear = false } = {}) => {
+  #exigirPeriodoBorrador = async (
+    db,
+    periodoId,
+    { bloquear = false, accion = "generar" } = {},
+  ) => {
     const consulta = bloquear
       ? queries.findPeriodoByIdForUpdate
       : queries.findPeriodoById;
@@ -123,7 +128,7 @@ export class PreNomina {
     }
     if (periodo.estado !== "BORRADOR") {
       throw new ErrorNegocio(
-        "Solo se puede generar la pre-nómina de un período en BORRADOR.",
+        `Solo se puede ${accion} la pre-nómina de un período en BORRADOR.`,
         409,
       );
     }
@@ -149,6 +154,22 @@ export class PreNomina {
     tasaAplicada: fila.tasa_aplicada,
     cantidadUnidades: fila.cantidad_unidades,
     monto: fila.monto,
+  });
+
+  // Línea del borrador traducida a lo que espera PayrollWriter para escribir
+  // el recibo final. `baseCalculo`, `tasaAplicada` y `monto` pasan a Decimal
+  // (node-pg los entrega como texto).
+  #lineaFinal = (fila) => ({
+    conceptoId: fila.concepto_id,
+    cuotaPrestamoId: fila.cuota_prestamo_id,
+    novedadId: fila.novedad_id,
+    conceptoPersonaId: fila.concepto_persona_id,
+    parametroId: fila.parametro_aporte_id,
+    baseCalculo: fila.base_calculo == null ? null : new Decimal(fila.base_calculo),
+    tasaAplicada:
+      fila.tasa_aplicada == null ? null : new Decimal(fila.tasa_aplicada),
+    cantidadUnidades: fila.cantidad_unidades,
+    monto: new Decimal(fila.monto),
   });
 
   // Única forma de respuesta del borrador: la usan generar, ver y guardar.
@@ -574,5 +595,174 @@ export class PreNomina {
 
       return this.#cargarBorrador(cliente, preNominaId);
     });
+  }
+
+  // Borra el borrador y, por ON DELETE CASCADE, sus recibos y líneas. No toca
+  // el período ni las novedades/cuotas: el borrador nunca las modificó.
+  async eliminar(preNominaId) {
+    this.#exigirSesion();
+    this.#validarUuid(preNominaId, "preNominaId");
+
+    return this.#db.transaction(async (cliente) => {
+      const inicial = await this.#exigirBorrador(cliente, preNominaId);
+      // Orden de bloqueo período -> borrador, igual que confirmar y procesar.
+      await this.#exigirPeriodoBorrador(cliente, inicial.periodo_nomina_id, {
+        bloquear: true,
+        accion: "eliminar",
+      });
+      await this.#exigirBorrador(cliente, preNominaId, { bloquear: true });
+
+      const { rows } = await cliente.query(queries.deletePreNomina, [preNominaId]);
+      const eliminada = rows[0];
+      return {
+        eliminada: true,
+        preNominaId: eliminada.id,
+        periodoId: eliminada.periodo_nomina_id,
+      };
+    });
+  }
+
+  // Convierte el borrador en la nómina final del período. Transacción única:
+  // si algo falla, el período sigue en BORRADOR y el borrador sigue ahí.
+  async confirmar(preNominaId, version) {
+    const usuarioId = this.#exigirSesion();
+    this.#validarUuid(preNominaId, "preNominaId");
+    this.#validarVersion(version);
+
+    try {
+      return await this.#db.transaction(async (cliente) => {
+        const inicial = await this.#exigirBorrador(cliente, preNominaId);
+
+        // 1. bloquear el período y validar estado (orden período -> borrador).
+        const periodo = await this.#exigirPeriodoBorrador(
+          cliente,
+          inicial.periodo_nomina_id,
+          { bloquear: true, accion: "confirmar" },
+        );
+
+        // 2. bloquear el borrador y validar la versión antes de escribir.
+        const borrador = await this.#exigirBorrador(cliente, preNominaId, {
+          bloquear: true,
+        });
+        if (borrador.version !== version) {
+          throw new ErrorNegocio(
+            "La pre-nómina cambió desde que la abriste; vuelve a cargarla.",
+            409,
+          );
+        }
+
+        // 3. guardas: lo que se agregó después de generar quedaría fuera.
+        const [{ rows: novedadesFuera }, { rows: cuotasFuera }] = await Promise.all([
+          cliente.query(queries.findNovedadesAprobadasFueraDelBorrador, [
+            periodo.id,
+            preNominaId,
+          ]),
+          cliente.query(queries.findCuotasPendientesFueraDelBorrador, [
+            aFechaISO(periodo.fecha_fin),
+            preNominaId,
+          ]),
+        ]);
+
+        const totalNovedades = novedadesFuera[0]?.total ?? 0;
+        if (totalNovedades > 0) {
+          const etiqueta =
+            totalNovedades === 1 ? "novedad aprobada" : "novedades aprobadas";
+          throw new ErrorNegocio(
+            `Hay ${totalNovedades} ${etiqueta} después de generar la pre-nómina; vuelve a generarla.`,
+            409,
+          );
+        }
+        const totalCuotas = cuotasFuera[0]?.total ?? 0;
+        if (totalCuotas > 0) {
+          const etiqueta = totalCuotas === 1 ? "cuota pendiente" : "cuotas pendientes";
+          throw new ErrorNegocio(
+            `Hay ${totalCuotas} ${etiqueta} después de generar la pre-nómina; vuelve a generarla.`,
+            409,
+          );
+        }
+
+        // 4. escribir un recibo_pago por recibo del borrador, con sus líneas.
+        const [{ rows: recibos }, { rows: detalles }] = await Promise.all([
+          cliente.query(queries.findPreNominasRecibos, [preNominaId]),
+          cliente.query(queries.findPreNominaDetalle, [preNominaId]),
+        ]);
+        const lineasPorRecibo = new Map();
+        for (const fila of detalles) {
+          const lineas = lineasPorRecibo.get(fila.pre_nomina_recibo_id) ?? [];
+          lineas.push(this.#lineaFinal(fila));
+          lineasPorRecibo.set(fila.pre_nomina_recibo_id, lineas);
+        }
+
+        const writer = new PayrollWriter(cliente);
+        const recibosFinales = [];
+        for (const recibo of recibos) {
+          const final = await writer.escribirReciboFinal(cliente, {
+            periodo,
+            contrato: {
+              persona_id: recibo.persona_id,
+              contrato_id: recibo.contrato_id,
+            },
+            lineas: lineasPorRecibo.get(recibo.id) ?? [],
+            totales: {
+              totalAsignaciones: new Decimal(recibo.total_asignaciones),
+              totalDeducciones: new Decimal(recibo.total_deducciones),
+              montoTotal: new Decimal(recibo.monto_total),
+            },
+          });
+          recibosFinales.push({
+            id: final.id,
+            personaId: final.persona_id,
+            montoTotal: final.monto_total,
+          });
+        }
+
+        // 5. marcar POR ID: no toca una novedad/cuota agregada después.
+        const novedadIds = [
+          ...new Set(detalles.map((fila) => fila.novedad_id).filter(Boolean)),
+        ];
+        for (const id of novedadIds) {
+          await cliente.query(queries.marcarNovedadAplicadaPorId, [id]);
+        }
+
+        const cuotaIds = [
+          ...new Set(
+            detalles.map((fila) => fila.cuota_prestamo_id).filter(Boolean),
+          ),
+        ];
+        for (const id of cuotaIds) {
+          await cliente.query(queries.marcarCuotaDescontada, [id]);
+        }
+
+        const { rows: prestamosPagados } = await cliente.query(
+          queries.marcarPrestamosPagados,
+        );
+
+        // 6. cerrar el período y borrar el borrador en la misma transacción.
+        const { rows: actualizado } = await cliente.query(
+          queries.updatePeriodoEstado,
+          [periodo.id, "PROCESADO", usuarioId, new Date()],
+        );
+
+        await cliente.query(queries.deletePreNomina, [preNominaId]);
+
+        return {
+          periodo: { id: actualizado[0].id, estado: actualizado[0].estado },
+          recibos: recibosFinales,
+          novedadesAplicadas: novedadIds.length,
+          cuotasDescontadas: cuotaIds.length,
+          prestamosPagados: prestamosPagados.length,
+          preNominaEliminada: true,
+        };
+      });
+    } catch (error) {
+      // Otra nómina descontó la misma cuota entre la guarda y el INSERT final.
+      if (error?.code === "23505") {
+        throw new ErrorNegocio(
+          "Una cuota del préstamo ya fue descontada por otra nómina; vuelve a generar la pre-nómina.",
+          409,
+        );
+      }
+      throw error;
+    }
   }
 }
