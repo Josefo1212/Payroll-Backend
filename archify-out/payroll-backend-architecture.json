@@ -86,8 +86,8 @@
       "id": "app",
       "type": "backend",
       "label": "Rutas /api",
-      "sublabel": "routes.js",
-      "tag": "POST /execute · /refresh",
+      "sublabel": "app.js",
+      "tag": "helmet · CORS · origen · rate limit",
       "pos": [
         240,
         220
@@ -163,7 +163,7 @@
       "label": "PostgreSQL · Neon",
       "sublabel": "pool máx 10",
       "brand": "postgresql",
-      "tag": "31 tablas · pre_nomina*",
+      "tag": "32 tablas · sesion · pre_nomina*",
       "pos": [
         1170,
         220
@@ -193,7 +193,7 @@
       "type": "backend",
       "label": "Sesión + CORS",
       "sublabel": "connect.sid · access_token",
-      "tag": "express-session + JWT",
+      "tag": "store PostgreSQL · JWT",
       "pos": [
         240,
         60
@@ -377,7 +377,7 @@
       "dot": "cyan",
       "title": "Punto de entrada único",
       "items": [
-        "app.js monta el router /api",
+        "app.js: helmet, CORS, origen, no-store",
         "El cliente manda { subsystem, class, method, params }"
       ]
     },
@@ -395,7 +395,7 @@
       "title": "Datos",
       "items": [
         "Solo los BO tocan la base, con parámetros",
-        "Consultas en queries.yaml, leídas una vez"
+        "Sesión en PostgreSQL; SQL en queries.yaml"
       ]
     },
     {

@@ -1,2 +1,10 @@
 allowBuilds:
   bcrypt: true
+
+# Fijados para cerrar dos avisos de `pnpm audit --prod` que llegaban por
+# express: body-parser 2.3.0 (DoS por bytes sobrantes tras un cuerpo
+# comprimido) y qs 6.16.0 (TypeError en stringify). Se pueden quitar cuando
+# express resuelva versiones parcheadas por su cuenta.
+overrides:
+  body-parser: 2.4.0
+  qs: 6.17.1

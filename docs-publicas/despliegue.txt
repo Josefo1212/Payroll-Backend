@@ -20,7 +20,11 @@ Los archivos se aplican en este orden (todos dentro de db/):
                                               aportes de ley, 8 clases, 33
                                               metodos, permisos y menu
   7. db/migrations/005_listar_personas.sql    Security/User/listarPersonas
-  8. db/seed-usuario-prueba.sql               admin_prueba/Password123 (SOLO dev)
+  8. db/migrations/006_*.sql .. 014_*.sql      permisos, perfiles, opciones,
+                                               horas extras y pre-nomina
+  9. db/migrations/015_sesion.sql              tabla sesion (express-session
+                                               sobre PostgreSQL)
+ 10. db/seed-usuario-prueba.sql               admin_prueba/Password123 (SOLO dev)
 
 El seed de seguridad va ANTES de las migraciones porque 001-005 asignan
 permisos a perfiles que crea ese seed.
@@ -69,9 +73,16 @@ branch nuevo, no encima de la base en uso.
                           de al menos 32 caracteres.
   ACCESS_TOKEN_TTL        duracion del access token (15m por defecto).
   REFRESH_TOKEN_TTL_DIAS  duracion del refresh token (7 dias por defecto).
-  FRONTEND_URLS           origenes permitidos por CORS, separados por coma.
+  FRONTEND_URLS           origenes permitidos por CORS y por la verificacion
+                          de origen, separados por coma. FRONTEND_URL sirve
+                          como respaldo para un solo origen.
+  COOKIE_SECURE           true/false fuerza el flag Secure de las cookies;
+                          por defecto es true solo en produccion.
   LOGIN_MAX_ATTEMPTS, LOGIN_BLOCK_MINUTES, LOGIN_FAIL_DELAY_MS
                           bloqueo y retardo del login.
+  LOGIN_RATE_MAX, LOGIN_RATE_WINDOW_MINUTES
+                          limite por IP de intentos fallidos de login
+                          (10 en 15 minutos por defecto).
 
 En produccion la cookie es secure (requiere HTTPS). Si el front esta en otro
 dominio, la cookie SameSite=Lax no viaja en peticiones cruzadas: hay que usar

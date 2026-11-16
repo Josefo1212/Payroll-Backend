@@ -622,9 +622,15 @@ Variables de entorno principales (.env, NO se versiona):
                         >= 32 caracteres)
   ACCESS_TOKEN_TTL      duracion del access token (15m por defecto)
   REFRESH_TOKEN_TTL_DIAS duracion del refresh token (7 por defecto)
-  FRONTEND_URLS         origenes permitidos por CORS, separados por coma
+  FRONTEND_URLS         origenes permitidos por CORS y por la verificacion de
+                        origen, separados por coma (FRONTEND_URL de respaldo)
+  COOKIE_SECURE         true/false fuerza el flag Secure; por defecto solo en
+                        produccion
   LOGIN_MAX_ATTEMPTS, LOGIN_BLOCK_MINUTES, LOGIN_FAIL_DELAY_MS
                         bloqueo y retardo del login
+  LOGIN_RATE_MAX, LOGIN_RATE_WINDOW_MINUTES
+                        limite por IP de intentos fallidos de login
+                        (10 en 15 minutos por defecto)
 
 Instalacion y arranque:
   pnpm install

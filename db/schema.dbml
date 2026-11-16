@@ -1,13 +1,15 @@
 // ==========================================
-// SISTEMA DE NÓMINA — MODELO DE DATOS v10 (31 tablas)
+// SISTEMA DE NÓMINA — MODELO DE DATOS v11 (32 tablas)
 // Regla: tablas transaccionales -> UUID; tablas maestras -> serial (int)
 // v8: se agrega refresh_token (sesiones JWT con rotación)
 // v10: se agrega la pre-nómina (pre_nomina, pre_nomina_recibo,
 //      pre_nomina_detalle) y el enum origen_linea (migración 014)
+// v11: se agrega sesion (express-session sobre PostgreSQL, migración 015)
 //
 // Seguridad:
 //   persona > usuario > usuario_perfil < Perfil
 //   Usuario > refresh_token
+//   sesion (cookie connect.sid; sin FK: la escribe el store de express-session)
 //   Subsistema > Opcion / Clase > Metodo
 //   permiso_opcion y permiso_metodo (Perfil con Opcion / Metodo)
 // ==========================================
@@ -198,6 +200,22 @@ Table refresh_token {
   }
 
   Note: 'El refresh token se envía al cliente en cookie httpOnly. Aquí solo se guarda su hash.'
+}
+
+// ------------------------------------------
+// SEGURIDAD: SESIÓN DE EXPRESS (TRANSACCIONAL)
+// ------------------------------------------
+
+Table sesion {
+  sid text [pk, note: 'Id de la cookie connect.sid']
+  sess jsonb [not null, note: 'JSON serializado por express-session: userID, perfiles y banderas. Nunca contraseñas ni hashes']
+  expira_en timestamptz [not null, note: 'Se renueva en cada petición (touch). El store borra las vencidas cada 15 min']
+
+  indexes {
+    expira_en [name: 'idx_sesion_expira_en']
+  }
+
+  Note: 'Sustituye al MemoryStore: sobrevive al reinicio y no acumula sesiones en el proceso.'
 }
 
 // ------------------------------------------

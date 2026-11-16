@@ -1,36 +1,38 @@
-export const verificarOrigenCsrf = (req, res, next) => {
-  const metodo = req.method;
-  if (metodo === "GET" || metodo === "HEAD" || metodo === "OPTIONS") {
+import { esOrigenPermitido } from "../config/http.js";
+
+const METODOS_SEGUROS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+// Defensa CSRF por origen, complementaria a SameSite=Lax. Solo se aplica a
+// métodos que cambian estado: un GET no debe modificar nada.
+//
+// - Con Origin: debe estar en la lista permitida.
+// - Sin Origin pero con Referer: se compara el origen del Referer.
+// - Sin Origin ni Referer: se deja pasar. No hay navegador que haga un POST
+//   cross-site sin Origin, y los scripts de verificación (curl, Node) no lo
+//   mandan; bloquearlos rompería los E2E sin aportar seguridad.
+export const verificarOrigen = (req, res, next) => {
+  if (METODOS_SEGUROS.has(req.method)) {
     return next();
   }
 
   const origen = req.headers.origin;
-  const referer = req.headers.referer;
-
-  const origenPermitido = process.env.FRONTEND_URL || "http://localhost:5173";
-
   if (origen) {
-    if (origen === origenPermitido) {
-      return next();
-    }
-    return res.status(403).json({ error: "Origen no permitido." });
+    return esOrigenPermitido(origen)
+      ? next()
+      : res.status(403).json({ error: "Origen no permitido." });
   }
 
+  const referer = req.headers.referer;
   if (referer) {
     try {
-      const url = new URL(referer);
-      const origenReferer = `${url.protocol}//${url.host}`;
-      if (origenReferer === origenPermitido) {
-        return next();
-      }
+      const { origin } = new URL(referer);
+      return esOrigenPermitido(origin)
+        ? next()
+        : res.status(403).json({ error: "Origen no permitido." });
     } catch {
-      // Si no se puede parsear, continuar con política restrictiva
+      return res.status(403).json({ error: "Origen no permitido." });
     }
-    return res.status(403).json({ error: "Origen no permitido." });
   }
 
-  // Sin Origin ni Referer: en desarrollo con herramientas puede ocurrir
-  // Se mantiene comportamiento restrictivo pero se permite si es mismo host
-  // Para este proyecto se requiere Origin/Referer
-  return res.status(403).json({ error: "Origen no permitido." });
+  return next();
 };
