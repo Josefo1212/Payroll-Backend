@@ -349,10 +349,12 @@ insertPeriodo: |
             procesado_por, fecha_proceso, created_at
 
 findPeriodoById: |
-  SELECT id, fecha_inicio, fecha_fin, frecuencia, estado, descripcion,
-         procesado_por, fecha_proceso, created_at
-  FROM periodo_nomina
-  WHERE id = $1
+  SELECT p.id, p.fecha_inicio, p.fecha_fin, p.frecuencia, p.estado,
+         p.descripcion, p.procesado_por, p.fecha_proceso, p.created_at,
+         pn.id AS pre_nomina_id, pn.version AS pre_nomina_version
+  FROM periodo_nomina p
+  LEFT JOIN pre_nomina pn ON pn.periodo_nomina_id = p.id
+  WHERE p.id = $1
 
 findPeriodoPorFechas: |
   SELECT id, fecha_inicio, fecha_fin, frecuencia, estado
@@ -362,10 +364,12 @@ findPeriodoPorFechas: |
     AND fecha_fin = $3
 
 listarPeriodos: |
-  SELECT id, fecha_inicio, fecha_fin, frecuencia, estado, descripcion,
-         procesado_por, fecha_proceso, created_at
-  FROM periodo_nomina
-  ORDER BY fecha_inicio DESC
+  SELECT p.id, p.fecha_inicio, p.fecha_fin, p.frecuencia, p.estado,
+         p.descripcion, p.procesado_por, p.fecha_proceso, p.created_at,
+         pn.id AS pre_nomina_id, pn.version AS pre_nomina_version
+  FROM periodo_nomina p
+  LEFT JOIN pre_nomina pn ON pn.periodo_nomina_id = p.id
+  ORDER BY p.fecha_inicio DESC
 
 updatePeriodoEstado: |
   UPDATE periodo_nomina
@@ -602,3 +606,187 @@ darDeBajaAfiliacion: |
    WHERE id = $1
      AND estado = 'ACTIVO'
   RETURNING id, estado, fecha_baja
+
+# ---------------------------------------------------------------------------
+# Pre-nómina (Payroll/PreNomina)
+# ---------------------------------------------------------------------------
+# Bloquea la fila del período: generar, procesar y confirmar se serializan
+# sobre ella para que no convivan borrador y recibo final.
+findPeriodoByIdForUpdate: |
+  SELECT id, fecha_inicio, fecha_fin, frecuencia, estado, descripcion
+  FROM periodo_nomina
+  WHERE id = $1
+  FOR UPDATE
+
+findPreNominaByPeriodo: |
+  SELECT id, version
+  FROM pre_nomina
+  WHERE periodo_nomina_id = $1
+
+findPreNominaById: |
+  SELECT pn.id, pn.periodo_nomina_id, pn.version, pn.generado_por,
+         pn.fecha_generacion, pn.actualizado_por, pn.fecha_actualizacion,
+         p.fecha_inicio, p.fecha_fin, p.frecuencia, p.estado AS periodo_estado,
+         p.descripcion AS periodo_descripcion
+  FROM pre_nomina pn
+  JOIN periodo_nomina p ON p.id = pn.periodo_nomina_id
+  WHERE pn.id = $1
+
+# FOR UPDATE OF pn: el JOIN con periodo_nomina no debe bloquear el período
+# (el orden de bloqueo es período -> borrador, ver confirmar).
+findPreNominaByIdForUpdate: |
+  SELECT pn.id, pn.periodo_nomina_id, pn.version
+  FROM pre_nomina pn
+  WHERE pn.id = $1
+  FOR UPDATE OF pn
+
+insertPreNomina: |
+  INSERT INTO pre_nomina (periodo_nomina_id, generado_por)
+  VALUES ($1, $2)
+  RETURNING id, periodo_nomina_id, version
+
+touchPreNomina: |
+  UPDATE pre_nomina
+     SET version = version + 1,
+         actualizado_por = $2,
+         fecha_actualizacion = now()
+   WHERE id = $1
+  RETURNING version
+
+deletePreNomina: |
+  DELETE FROM pre_nomina
+  WHERE id = $1
+  RETURNING id, periodo_nomina_id
+
+findPreNominasRecibos: |
+  SELECT pr.id, pr.persona_id, pr.contrato_id, pr.total_asignaciones,
+         pr.total_deducciones, pr.monto_total,
+         p.cedula, p.primer_nombre, p.primer_apellido
+  FROM pre_nomina_recibo pr
+  JOIN persona p ON p.id = pr.persona_id
+  WHERE pr.pre_nomina_id = $1
+  ORDER BY p.primer_apellido, p.primer_nombre
+
+# Una sola consulta para todo el borrador (evita N+1 al armar `ver`).
+# Trae tipo/categoría/afecta_base_ley del concepto: el recálculo de ley los
+# necesita y no se guardan en el borrador (el concepto es la autoridad).
+findPreNominaDetalle: |
+  SELECT d.id, d.pre_nomina_recibo_id, d.concepto_id, d.origen,
+         d.cuota_prestamo_id, d.novedad_id, d.concepto_persona_id,
+         d.parametro_aporte_id, d.base_calculo, d.tasa_aplicada,
+         d.cantidad_unidades, d.monto, d.editada,
+         co.codigo, co.nombre_concepto, co.tipo_concepto, co.categoria,
+         co.unidad, co.afecta_base_ley
+  FROM pre_nomina_detalle d
+  JOIN pre_nomina_recibo pr ON pr.id = d.pre_nomina_recibo_id
+  JOIN concepto co ON co.id = d.concepto_id
+  WHERE pr.pre_nomina_id = $1
+  ORDER BY pr.id,
+    CASE co.tipo_concepto
+      WHEN 'ASIGNACION' THEN 1
+      WHEN 'DEDUCCION' THEN 2
+      WHEN 'APORTE_PATRONAL' THEN 3
+      ELSE 4
+    END,
+    co.codigo
+
+insertPreNominaRecibo: |
+  INSERT INTO pre_nomina_recibo
+    (pre_nomina_id, persona_id, contrato_id, total_asignaciones,
+     total_deducciones, monto_total)
+  VALUES ($1, $2, $3, $4::numeric(12,2), $5::numeric(12,2), $6::numeric(12,2))
+  RETURNING id, persona_id, contrato_id, total_asignaciones,
+            total_deducciones, monto_total
+
+updatePreNominaReciboTotales: |
+  UPDATE pre_nomina_recibo
+     SET total_asignaciones = $2::numeric(12,2),
+         total_deducciones = $3::numeric(12,2),
+         monto_total = $4::numeric(12,2)
+   WHERE id = $1
+  RETURNING id
+
+# Casts explícitos: los parámetros que llegan null (base_calculo, tasa,
+# cantidad) no deben resolverse como text.
+insertPreNominaDetalle: |
+  INSERT INTO pre_nomina_detalle
+    (pre_nomina_recibo_id, concepto_id, origen, cuota_prestamo_id,
+     novedad_id, concepto_persona_id, parametro_aporte_id, base_calculo,
+     tasa_aplicada, cantidad_unidades, monto, editada)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric(12,2), $9::numeric(6,4),
+          $10::numeric(8,2), $11::numeric(12,2), $12)
+  RETURNING id
+
+updatePreNominaDetalleMonto: |
+  UPDATE pre_nomina_detalle
+     SET monto = $2::numeric(12,2),
+         cantidad_unidades = $3::numeric(8,2),
+         editada = $4
+   WHERE id = $1
+  RETURNING id
+
+updatePreNominaDetalleLey: |
+  UPDATE pre_nomina_detalle
+     SET base_calculo = $2::numeric(12,2),
+         monto = $3::numeric(12,2)
+   WHERE id = $1
+  RETURNING id
+
+deletePreNominaDetalle: |
+  DELETE FROM pre_nomina_detalle
+  WHERE id = $1
+  RETURNING id
+
+# Semántica "reemplazo": se borran las editables del recibo que no vinieron.
+deletePreNominaDetalleEditables: |
+  DELETE FROM pre_nomina_detalle
+  WHERE pre_nomina_recibo_id = $1
+    AND origen IN ('CALCULADA', 'MANUAL')
+    AND id <> ALL($2::uuid[])
+  RETURNING id
+
+findParametrosAportePorIds: |
+  SELECT id, piso_base, tope_base, tasa_empleado, tasa_patronal
+  FROM parametro_aporte_ley
+  WHERE id = ANY($1::int[])
+
+# Guardas de confirmar: lo que se agregó DESPUÉS de generar quedaría fuera.
+findNovedadesAprobadasFueraDelBorrador: |
+  SELECT COUNT(*)::int AS total
+  FROM novedad n
+  WHERE n.periodo_nomina_id = $1
+    AND n.estado = 'APROBADA'
+    AND n.id NOT IN (
+      SELECT d.novedad_id
+      FROM pre_nomina_detalle d
+      JOIN pre_nomina_recibo pr ON pr.id = d.pre_nomina_recibo_id
+      WHERE pr.pre_nomina_id = $2
+        AND d.novedad_id IS NOT NULL
+    )
+
+findCuotasPendientesFueraDelBorrador: |
+  SELECT COUNT(*)::int AS total
+  FROM cuota_prestamo cp
+  JOIN prestamo p ON p.id = cp.prestamo_id
+  WHERE p.estado = 'ACTIVO'
+    AND cp.estado = 'PENDIENTE'
+    AND cp.fecha_vencimiento <= $1
+    AND p.persona_id IN (
+      SELECT pr.persona_id FROM pre_nomina_recibo pr WHERE pr.pre_nomina_id = $2
+    )
+    AND cp.id NOT IN (
+      SELECT d.cuota_prestamo_id
+      FROM pre_nomina_detalle d
+      JOIN pre_nomina_recibo pr ON pr.id = d.pre_nomina_recibo_id
+      WHERE pr.pre_nomina_id = $2
+        AND d.cuota_prestamo_id IS NOT NULL
+    )
+
+# Confirmar marca POR ID, no por persona/período: no toca una fila que se
+# agregó después de generar.
+marcarNovedadAplicadaPorId: |
+  UPDATE novedad
+     SET estado = 'APLICADA'
+   WHERE id = $1
+     AND estado = 'APROBADA'
+  RETURNING id
