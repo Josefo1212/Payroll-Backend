@@ -82,7 +82,7 @@ export class Loan {
         cuotas,
         cuotaPeriodica,
         tasa.toFixed(4),
-        usuarioId,
+        null,
       ]);
       const prestamo = prestamos[0];
 
@@ -160,6 +160,62 @@ export class Loan {
     const { rows } = await this.#db.query(queries.anularPrestamo, [prestamoId]);
     return rows[0];
   }
+
+  async aprobar(prestamoId) {
+    return this.#gestionar(prestamoId, queries.aprobarPrestamo, {
+      requiereContratoVigente: true,
+      bloqueaPropio: true,
+    });
+  }
+
+  async rechazar(prestamoId) {
+    return this.#gestionar(prestamoId, queries.rechazarPrestamo, {
+      requiereContratoVigente: false,
+      bloqueaPropio: false,
+    });
+  }
+
+  #gestionar = async (prestamoId, consulta, { requiereContratoVigente, bloqueaPropio }) => {
+    const usuarioId = this.#req?.session?.userID;
+    if (!usuarioId) {
+      throw new ErrorNegocio("Debes iniciar sesión.", 401);
+    }
+    if (typeof prestamoId !== "string" || prestamoId.trim() === "") {
+      throw new ErrorNegocio("prestamo_id es obligatorio.", 400);
+    }
+
+    const { rows: prestamos } = await this.#db.query(queries.findPrestamoById, [prestamoId]);
+    const prestamo = prestamos[0];
+    if (!prestamo) {
+      throw new ErrorNegocio("El préstamo no existe.", 404);
+    }
+    if (prestamo.estado !== "SOLICITADO") {
+      throw new ErrorNegocio("El préstamo no existe o ya fue gestionado.", 409);
+    }
+
+    if (requiereContratoVigente) {
+      const { rows: contratos } = await this.#db.query(
+        queries.findContratoVigentePorPersona,
+        [prestamo.persona_id],
+      );
+      if (!contratos[0]) {
+        throw new ErrorNegocio("La persona ya no tiene un contrato vigente.", 409);
+      }
+    }
+
+    if (bloqueaPropio) {
+      const personaSesion = await personaIdDeSesion(this.#db, this.#req);
+      if (personaSesion === prestamo.persona_id) {
+        throw new ErrorNegocio("No puedes aprobar tu propio préstamo.", 403);
+      }
+    }
+
+    const { rows } = await this.#db.query(consulta, [prestamoId, usuarioId]);
+    if (!rows[0]) {
+      throw new ErrorNegocio("El préstamo no existe o ya fue gestionado.", 409);
+    }
+    return { id: rows[0].id, estado: rows[0].estado };
+  };
 
   async misPrestamos() {
     const personaId = await personaIdDeSesion(this.#db, this.#req);

@@ -252,7 +252,7 @@ insertPrestamo: |
   INSERT INTO prestamo
     (persona_id, fecha_otorgamiento, monto_total, nro_cuotas,
      cuota_periodica, tasa_interes, estado, aprobado_por)
-  VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVO', $7)
+  VALUES ($1, $2, $3, $4, $5, $6, 'SOLICITADO', $7)
   RETURNING id, persona_id, fecha_otorgamiento, monto_total, nro_cuotas,
             cuota_periodica, tasa_interes, estado, created_at
 
@@ -301,6 +301,22 @@ anularPrestamo: |
    WHERE id = $1
      AND estado IN ('SOLICITADO', 'ACTIVO')
   RETURNING id, estado
+
+aprobarPrestamo: |
+  UPDATE prestamo
+     SET estado = 'ACTIVO',
+         aprobado_por = $2
+   WHERE id = $1
+     AND estado = 'SOLICITADO'
+  RETURNING id, estado, aprobado_por
+
+rechazarPrestamo: |
+  UPDATE prestamo
+     SET estado = 'ANULADO',
+         aprobado_por = $2
+   WHERE id = $1
+     AND estado = 'SOLICITADO'
+  RETURNING id, estado, aprobado_por
 
 marcarPrestamoPagado: |
   UPDATE prestamo
