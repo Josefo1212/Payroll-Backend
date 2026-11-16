@@ -5,47 +5,407 @@
     "title": "Backend de Nómina · Arquitectura",
     "output": "archify-out/payroll-backend-architecture.html",
     "quality_profile": "showcase",
-    "legend": { "mode": "auto" },
+    "legend": {
+      "mode": "auto"
+    },
     "views": [
-      { "id": "request-path", "label": "Camino de la petición", "focus": ["cliente", "app", "security", "bo", "db"], "note": "El cliente manda un sobre a /api/execute y Security lo despacha al objeto de negocio." },
-      { "id": "reflection", "label": "Reflexión y permisos", "focus": ["security", "permisos", "bo"], "note": "Forma, permiso, reflexión y ejecución, en ese orden." },
-      { "id": "datos", "label": "Datos y seguridad", "focus": ["db", "queries", "neon", "sesion"], "note": "Solo los objetos de negocio tocan la base, a través del componente de datos." },
-      { "id": "nomina", "label": "Subsistema Payroll", "focus": ["bo", "services", "db", "queries"], "note": "Ocho BO de nómina calculan con PayrollCalculator y consultan por el componente de datos." }
+      {
+        "id": "request-path",
+        "label": "Camino de la petición",
+        "focus": [
+          "cliente",
+          "app",
+          "security",
+          "bo",
+          "db"
+        ],
+        "note": "El cliente manda un sobre a /api/execute y Security lo despacha al objeto de negocio."
+      },
+      {
+        "id": "reflection",
+        "label": "Reflexión y permisos",
+        "focus": [
+          "security",
+          "permisos",
+          "bo"
+        ],
+        "note": "Forma, permiso, reflexión y ejecución, en ese orden."
+      },
+      {
+        "id": "datos",
+        "label": "Datos y seguridad",
+        "focus": [
+          "db",
+          "queries",
+          "neon",
+          "sesion"
+        ],
+        "note": "Solo los objetos de negocio tocan la base, a través del componente de datos."
+      },
+      {
+        "id": "nomina",
+        "label": "Subsistema Payroll",
+        "focus": [
+          "bo",
+          "writer",
+          "services",
+          "db"
+        ],
+        "note": "Nueve BO de nómina; PayrollWriter comparte el cálculo entre el borrador y el recibo final."
+      },
+      {
+        "id": "pre-nomina",
+        "label": "Pre-nómina",
+        "focus": [
+          "bo",
+          "writer",
+          "db",
+          "neon"
+        ],
+        "note": "Generar → guardar → confirmar: el borrador (pre_nomina*) se vuelve recibo final y desaparece."
+      }
     ]
   },
   "components": [
-    { "id": "cliente", "type": "frontend", "label": "Cliente Web", "sublabel": "execute()", "tag": "otro repo", "pos": [40, 220], "size": [120, 72] },
-    { "id": "app", "type": "backend", "label": "Rutas /api", "sublabel": "routes.js", "tag": "POST /execute · /refresh", "pos": [240, 220], "size": [150, 72] },
-    { "id": "security", "type": "security", "label": "Security", "sublabel": "executeMethod()", "tag": "forma→sesión→permiso→reflexión", "pos": [470, 220], "size": [160, 72] },
-    { "id": "bo", "type": "backend", "label": "Objetos de negocio", "sublabel": "Session · Security · Payroll", "tag": "Session·Token │ Menu·Admin·User │ Payroll ×8", "pos": [710, 220], "size": [180, 72] },
-    { "id": "services", "type": "backend", "label": "Servicios", "sublabel": "src/services", "tag": "Password · Permisos · Token · Nómina", "pos": [710, 360], "size": [180, 68] },
-    { "id": "db", "type": "backend", "label": "Componente de datos", "sublabel": "query() · transaction()", "tag": "Database.js", "pos": [970, 220], "size": [170, 72] },
-    { "id": "neon", "type": "database", "label": "PostgreSQL · Neon", "sublabel": "pool máx 10", "brand": "postgresql", "tag": "sslmode=require", "pos": [1170, 220], "size": [170, 72] },
-    { "id": "sesion", "type": "backend", "label": "Sesión + CORS", "sublabel": "connect.sid · access_token", "tag": "express-session + JWT", "pos": [240, 60], "size": [150, 68] },
-    { "id": "permisos", "type": "security", "label": "Mapas en memoria", "sublabel": "métodos + opciones", "tag": "O(1) por perfil · edición en caliente", "pos": [470, 60], "size": [160, 68] },
-    { "id": "queries", "type": "backend", "label": "queries.yaml", "sublabel": "global · por BO", "tag": "SQL parametrizado $1, $2", "pos": [970, 60], "size": [170, 68] }
+    {
+      "id": "cliente",
+      "type": "frontend",
+      "label": "Cliente Web",
+      "sublabel": "execute()",
+      "tag": "otro repo",
+      "pos": [
+        40,
+        220
+      ],
+      "size": [
+        120,
+        72
+      ]
+    },
+    {
+      "id": "app",
+      "type": "backend",
+      "label": "Rutas /api",
+      "sublabel": "routes.js",
+      "tag": "POST /execute · /refresh",
+      "pos": [
+        240,
+        220
+      ],
+      "size": [
+        150,
+        72
+      ]
+    },
+    {
+      "id": "security",
+      "type": "security",
+      "label": "Security",
+      "sublabel": "executeMethod()",
+      "tag": "forma→sesión→permiso→reflexión",
+      "pos": [
+        470,
+        220
+      ],
+      "size": [
+        160,
+        72
+      ]
+    },
+    {
+      "id": "bo",
+      "type": "backend",
+      "label": "Objetos de negocio",
+      "sublabel": "Session · Security · Payroll",
+      "tag": "Session·Token │ Menu·Admin·User │ Payroll ×9",
+      "pos": [
+        710,
+        220
+      ],
+      "size": [
+        180,
+        72
+      ]
+    },
+    {
+      "id": "services",
+      "type": "backend",
+      "label": "Servicios",
+      "sublabel": "src/services",
+      "tag": "Password · Permisos · Token · Nómina",
+      "pos": [
+        470,
+        360
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "db",
+      "type": "backend",
+      "label": "Componente de datos",
+      "sublabel": "query() · transaction()",
+      "tag": "Database.js",
+      "pos": [
+        970,
+        220
+      ],
+      "size": [
+        170,
+        72
+      ]
+    },
+    {
+      "id": "neon",
+      "type": "database",
+      "label": "PostgreSQL · Neon",
+      "sublabel": "pool máx 10",
+      "brand": "postgresql",
+      "tag": "31 tablas · pre_nomina*",
+      "pos": [
+        1170,
+        220
+      ],
+      "size": [
+        170,
+        72
+      ]
+    },
+    {
+      "id": "writer",
+      "type": "backend",
+      "label": "PayrollWriter",
+      "sublabel": "cálculo y escritura",
+      "tag": "borrador y recibo final",
+      "pos": [
+        710,
+        360
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "sesion",
+      "type": "backend",
+      "label": "Sesión + CORS",
+      "sublabel": "connect.sid · access_token",
+      "tag": "express-session + JWT",
+      "pos": [
+        240,
+        60
+      ],
+      "size": [
+        150,
+        68
+      ]
+    },
+    {
+      "id": "permisos",
+      "type": "security",
+      "label": "Mapas en memoria",
+      "sublabel": "métodos + opciones",
+      "tag": "O(1) por perfil · edición en caliente",
+      "pos": [
+        470,
+        60
+      ],
+      "size": [
+        160,
+        68
+      ]
+    },
+    {
+      "id": "queries",
+      "type": "backend",
+      "label": "queries.yaml",
+      "sublabel": "global · por BO",
+      "tag": "SQL parametrizado $1, $2",
+      "pos": [
+        970,
+        60
+      ],
+      "size": [
+        170,
+        68
+      ]
+    }
   ],
   "boundaries": [
-    { "kind": "region", "label": "Backend monolítico · Node.js", "wraps": ["app", "sesion", "security", "permisos", "bo", "services", "queries", "db"] },
-    { "kind": "security-group", "label": "Esquema de seguridad", "wraps": ["security", "permisos", "bo"] }
+    {
+      "kind": "region",
+      "label": "Backend monolítico · Node.js",
+      "wraps": [
+        "app",
+        "sesion",
+        "security",
+        "permisos",
+        "bo",
+        "writer",
+        "services",
+        "queries",
+        "db"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Esquema de seguridad",
+      "wraps": [
+        "security",
+        "permisos",
+        "bo"
+      ]
+    }
   ],
   "connections": [
-    { "id": "cliente-app", "from": "cliente", "to": "app", "label": "POST /api/execute", "variant": "emphasis", "labelDy": 56 },
-    { "id": "cliente-refresh", "from": "cliente", "to": "app", "label": "POST /api/refresh", "fromSide": "bottom", "toSide": "bottom", "labelAt": [240, 318] },
-    { "id": "app-sesion", "from": "app", "to": "sesion", "label": "req.session · access_token", "fromSide": "top", "toSide": "bottom" },
-    { "id": "app-security", "from": "app", "to": "security", "label": "executeMethod", "variant": "emphasis", "labelDy": 56 },
-    { "id": "security-permisos", "from": "security", "to": "permisos", "label": "resuelve permiso", "variant": "security", "fromSide": "top", "toSide": "bottom" },
-    { "id": "security-bo", "from": "security", "to": "bo", "label": "reflexión", "variant": "security", "labelDy": 56 },
-    { "id": "bo-db", "from": "bo", "to": "db", "label": "solo los BO tocan la BD", "labelDy": 56 },
-    { "id": "bo-services", "from": "bo", "to": "services", "label": "lógica reutilizable", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [800, 306] },
-    { "id": "security-services", "from": "security", "to": "services", "label": "arma llaves", "variant": "dashed", "fromSide": "bottom", "toSide": "left" },
-    { "id": "db-queries", "from": "db", "to": "queries", "label": "carga al arrancar", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
-    { "id": "db-neon", "from": "db", "to": "neon", "label": "SQL parametrizado", "labelDy": 56 }
+    {
+      "id": "cliente-app",
+      "from": "cliente",
+      "to": "app",
+      "label": "POST /api/execute",
+      "variant": "emphasis",
+      "labelDy": 56
+    },
+    {
+      "id": "cliente-refresh",
+      "from": "cliente",
+      "to": "app",
+      "label": "POST /api/refresh",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "labelAt": [
+        240,
+        318
+      ]
+    },
+    {
+      "id": "app-sesion",
+      "from": "app",
+      "to": "sesion",
+      "label": "req.session · access_token",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "app-security",
+      "from": "app",
+      "to": "security",
+      "label": "executeMethod",
+      "variant": "emphasis",
+      "labelDy": 56
+    },
+    {
+      "id": "security-permisos",
+      "from": "security",
+      "to": "permisos",
+      "label": "resuelve permiso",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "security-bo",
+      "from": "security",
+      "to": "bo",
+      "label": "reflexión",
+      "variant": "security",
+      "labelDy": 56
+    },
+    {
+      "id": "bo-db",
+      "from": "bo",
+      "to": "db",
+      "label": "solo los BO tocan la BD",
+      "labelDy": 56
+    },
+    {
+      "id": "bo-writer",
+      "from": "bo",
+      "to": "writer",
+      "label": "nómina y pre-nómina",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        870,
+        340
+      ]
+    },
+    {
+      "id": "bo-services",
+      "from": "bo",
+      "to": "services",
+      "label": "lógica reutilizable",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "security-services",
+      "from": "security",
+      "to": "services",
+      "label": "arma llaves",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        553,
+        306
+      ]
+    },
+    {
+      "id": "db-queries",
+      "from": "db",
+      "to": "queries",
+      "label": "carga al arrancar",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "db-neon",
+      "from": "db",
+      "to": "neon",
+      "label": "SQL parametrizado",
+      "labelDy": 56
+    }
   ],
   "cards": [
-    { "dot": "cyan", "title": "Punto de entrada único", "items": ["app.js monta el router /api (routes.js)", "El cliente no arma rutas por entidad", "Manda { subsystem, class, method, params }"] },
-    { "dot": "rose", "title": "Seguridad", "items": ["Orden fijo: forma → sesión → permiso → reflexión", "Permisos en mapas en memoria; Security/Admin edita métodos y opciones en caliente", "El menú se pide por perfil activo: getOptions(perfilId) valida la sesión (403)", "Security/Admin administra perfiles, el catálogo de opciones y su asignación", "Guardas: escalada (403) y anti-bloqueo de Superusuario y opciones críticas (409)"] },
-    { "dot": "emerald", "title": "Datos", "items": ["Solo los objetos de negocio tocan la base", "A través del componente de datos, con parámetros", "Consultas en queries.yaml global y por BO, leídas una vez"] },
-    { "dot": "violet", "title": "Servicios y nómina", "items": ["Lógica reutilizable sin BD ni sesión", "PasswordService, PermissionKeyService y TokenService", "PayrollCalculator con decimal.js; access JWT y refresh rotativo"] }
+    {
+      "dot": "cyan",
+      "title": "Punto de entrada único",
+      "items": [
+        "app.js monta el router /api",
+        "El cliente manda { subsystem, class, method, params }"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Seguridad",
+      "items": [
+        "Forma → sesión → permiso → reflexión",
+        "Permisos en memoria; el menú se pide por perfil activo",
+        "Security/Admin edita métodos, opciones y perfiles en caliente"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Datos",
+      "items": [
+        "Solo los BO tocan la base, con parámetros",
+        "Consultas en queries.yaml, leídas una vez"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Servicios y nómina",
+      "items": [
+        "PayrollWriter comparte cálculo y escritura",
+        "Payroll/PreNomina: generar → guardar → confirmar",
+        "PayrollCalculator con decimal.js"
+      ]
+    }
   ]
 }

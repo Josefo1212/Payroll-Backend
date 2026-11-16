@@ -57,8 +57,9 @@ con UUID). Las consultas viven en `queries.yaml`; el seed de seguridad está
 aplicado (`db/seed-seguridad.sql`); `src/security/Security.js` (mapas y
 `executeMethod`) y los BO de `src/bo/Session/` (`Session.js`) y `src/bo/Security/` (`Menu.js`, `Admin.js`, `User.js`) existen; el login usa
 `bcrypt` con bloqueo por intentos y la sesión guarda los perfiles N:M.
-`db/schema.dbml` (v8, 27 tablas) está escrito, en snake_case minúscula, y
-espeja `db/init.sql` 1:1 (mismas tablas y columnas).
+`db/schema.dbml` (v10, 31 tablas) está escrito, en snake_case minúscula, y
+espeja `db/init.sql` **más las migraciones aplicadas** (mismas tablas y
+columnas; `init.sql` sigue en v8 con 27 tablas).
 La sesión se separó a su propio subsistema.
 **Las specs 002 (seguridad, T1–T14) y 003 (`POST /execute`) están
 implementadas y verificadas.**
@@ -156,8 +157,28 @@ con guard por nombre de perfil porque `Administrador` comparte el rol
 `superuser`. `pnpm test` 149/149 y `scripts/manual/horas_extras_e2e.mjs` 45/45
 → `HORAS EXTRAS E2E OK`.
 
-**Pendiente:** el endpoint del menú y el front (Fase 5), y migrar las
-consultas de `queries.yaml` a los BO.
+**Spec 012 (pre-nómina) implementada (2026-11-15):** `Payroll/PreNomina` con
+`generar`, `ver`, `guardar`, `eliminar` y `confirmar`, más tres tablas
+(`pre_nomina`, `pre_nomina_recibo`, `pre_nomina_detalle`) y el enum
+`origen_linea` (`CALCULADA`, `RECURRENTE`, `NOVEDAD`, `PRESTAMO`, `LEY`,
+`MANUAL`) en `db/migrations/014_pre_nomina.sql`; `db/schema.dbml` queda en v10
+(31 tablas). Un borrador por período (`UNIQUE (periodo_nomina_id)`), sin
+columna de estado: existe o no existe. `guardar` reemplaza las líneas
+editables del recibo enviado y recalcula `LEY`/`APORTE_PATRONAL` con la tasa
+congelada; `confirmar` escribe el recibo final con `PayrollWriter` y borra el
+borrador en la misma transacción. `src/bo/Payroll/PayrollWriter.js` concentra
+el cálculo y la escritura que antes vivía dentro de `Period.procesar`, que
+ahora responde `409` si hay borrador sin confirmar; `Period.listar`/`ver`
+exponen `preNominaId`/`preNominaVersion` (`ver` además `preNomina`). Permisos
+solo `RRHH` y `Superusuario`, más la opción de menú `PreNomina` (Payroll,
+orden 10). `pnpm test` 202/202 (40 en `test/preNomina.test.js`) y
+`scripts/manual/pre_nomina_e2e.mjs` 143/143 → `PRE NOMINA E2E OK`. Diagrama
+`archify` refrescado (nodo `PayrollWriter`, `pre_nomina*` en Neon y vista
+"Pre-nómina").
+
+**Pendiente:** el endpoint del menú y el front (Fase 5), la pantalla
+`/payroll/pre-nomina` (contrato en `PROMPT-FRONT.md`, repo del front), y
+migrar las consultas de `queries.yaml` a los BO.
 
 El detalle histórico por fase vive en `docs/bitacora.md`.
 
@@ -266,7 +287,7 @@ src/services/<Clase>.js      lógica reutilizable sin BD ni sesión (PasswordSer
 src/errors/                  ErrorNegocio y utilidades de log
 db/init.sql                  esquema base, se corre una vez (v8, 27 tablas, sin número)
 db/migrations/NNN_nombre.sql cambios posteriores sobre base con datos (número primero)
-db/schema.dbml               modelo completo para dbdiagram.io (espeja init.sql)
+db/schema.dbml               modelo completo para dbdiagram.io (init.sql + migraciones)
 public/                      front: componentes, signals, estilos (otro repo)
 ```
 
@@ -315,7 +336,10 @@ gana la práctica.
 ## Base de datos
 
 El modelo objetivo es la **v8 (27 tablas)**, consolidado en `db/init.sql`
-(un solo archivo en snake_case minúscula) y espejado 1:1 en `db/schema.dbml`.
+(un solo archivo en snake_case minúscula). Las migraciones agregan tablas
+(`registro_horas` en la 004; `pre_nomina`, `pre_nomina_recibo` y
+`pre_nomina_detalle` en la 014) y `db/schema.dbml` refleja el estado final
+(v10, 31 tablas).
 Las tablas transaccionales y `persona`/`usuario`/`refresh_token` usan `uuid`;
 las maestras (`perfil`, `subsistema`, `opcion`, `clase`, `metodo`, `concepto`,
 `banco`, `cargo`, `tipo_aporte_ley`, `parametro_aporte_ley`) usan `serial`.
@@ -327,7 +351,8 @@ las maestras (`perfil`, `subsistema`, `opcion`, `clase`, `metodo`, `concepto`,
 | Seguridad: permisos | permiso_opcion, permiso_metodo |
 | Personal | persona, cuenta_bancaria, banco, cargo, contrato, contrato_salario |
 | Ley y seguro social | tipo_aporte_ley, parametro_aporte_ley, afiliacion_ley |
-| Nómina | concepto, concepto_persona, novedad, periodo_nomina, recibo_pago, detalle_recibo |
+| Nómina | concepto, concepto_persona, novedad, registro_horas, periodo_nomina, recibo_pago, detalle_recibo |
+| Pre-nómina | pre_nomina, pre_nomina_recibo, pre_nomina_detalle |
 | Préstamos | prestamo, cuota_prestamo |
 
 Relaciones clave:
@@ -340,6 +365,9 @@ Relaciones clave:
   familias (`familia_id`), adicionales a `express-session`.
 - `recibo_pago` = cabecera (una por persona por período); `detalle_recibo` =
   líneas, cada una con un **único origen** (CHECK en la BD).
+- `pre_nomina 1─1 periodo_nomina` (`UNIQUE (periodo_nomina_id)`) y
+  `pre_nomina 1─N pre_nomina_recibo 1─N pre_nomina_detalle`, todo con
+  `ON DELETE CASCADE`: el borrador se borra entero.
 - `cuota_prestamo 1─1 detalle_recibo`: una cuota se descuenta una sola vez.
 
 Reglas que el DBML no expresa (van en la BD): una sola cuenta principal
@@ -497,11 +525,86 @@ o datos desechables), y ninguna prueba depende de otra.
   de perfil se reutiliza la respuesta cacheada de ese perfil y se invalida
   entera cuando la administración de opciones fuerza un refresco (`force`),
   porque el cambio pudo afectar a cualquier perfil del usuario.
+- **`FOR UPDATE OF pn` necesita el alias de la tabla bloqueada.** El borrador
+  se bloquea con `SELECT ... FROM pre_nomina pn ... FOR UPDATE OF pn`; sin el
+  `OF pn` PostgreSQL intenta bloquear también el `periodo_nomina` del `JOIN` y
+  la transacción queda esperando un lock que ya tiene. Orden de bloqueo:
+  período → borrador, siempre el mismo, para no interbloquear.
+- **El borrador es un snapshot; no se recalcula al confirmar.** `confirmar`
+  copia las líneas del borrador tal cual (con su `base_calculo`,
+  `tasa_aplicada` y `monto`) y no vuelve a llamar al calculador. Si entre
+  `generar` y `confirmar` apareció una novedad o venció una cuota, se responde
+  `409` y se pide regenerar: recalcular en silencio haría que el recibo no
+  coincida con lo que RRHH vio y editó.
+- **`monto > 0` en `pre_nomina_detalle` obliga a borrar la línea `LEY` que baja
+  a cero.** Al editar el sueldo hacia abajo, el aporte patronal o de ley puede
+  quedar en 0; un `UPDATE ... SET monto = 0` viola el CHECK. El recálculo
+  borra la fila cuando el monto da 0 y la inserta cuando vuelve a ser > 0.
+- **`guardar` reemplaza, no parchea.** Por cada recibo enviado se conservan
+  las líneas con `id` (validando que sean editables) y se borran las
+  editables omitidas; después se insertan las líneas con `id: null` como
+  `MANUAL`. Un recibo no enviado queda intacto, y `recibos: []` es `400`.
+  El borrado de editables debe correr **antes** de insertar las `MANUAL`, o el
+  barrido se lleva la línea recién creada.
+- **La cascada del borrador está en la BD.** `pre_nomina_detalle` y
+  `pre_nomina_recibo` cuelgan de `pre_nomina` con `ON DELETE CASCADE`, y
+  `pre_nomina` de `periodo_nomina` también: borrar el período no deja huérfanos.
+  Aun así `eliminar` borra la cabecera dentro de una transacción y devuelve
+  cuántas filas se llevó.
+- **`confirmar` valida por id, no por conteo.** Marca `APLICADA` solo las
+  novedades y `DESCONTADA` solo las cuotas que están en el borrador; después
+  cuenta las que quedaron aprobadas/pendientes **fuera** del borrador y
+  responde `409` si hay alguna. Comparar totales daría falsos positivos con
+  dos novedades del mismo período.
+- **Una cuota repetida en el recibo final llega como `23505`, no `23503`.**
+  `detalle_recibo.cuota_prestamo_id` es único en la práctica; `confirmar`
+  traduce el `23505` a `409` con un mensaje que pide regenerar. `Period.procesar`
+  ya tenía la misma guarda.
+- **El test con base falsa necesita simular `findPeriodoByIdForUpdate` y
+  `findPreNominaByPeriodo`.** Al refactorizar `Period.procesar` cambian las
+  consultas que ejecuta; si el doble no las conoce, el test falla con
+  "Consulta no simulada" y no con el comportamiento real.
+- **`archify` no admite tarjetas de más: el visor desborda el alto.** Con
+  cuatro tarjetas largas el `visual-check` fallaba a 1440×900 (scrollHeight
+  1037) y a 1600×1000; con cuatro tarjetas de 2–3 ítems y el diagrama en tres
+  filas (60/220/360) pasa en los cuatro tamaños. Si se agrega contenido,
+  recortar tarjetas antes que nodos o tipografía.
 
 ## Decisiones de diseño
 
 Registro de decisiones con su motivo. Las viejas no se editan: si una cambia,
 se agrega una nueva que la reemplaza.
+
+### 2026-11-15
+
+- **La pre-nómina es una tabla aparte, no un estado del período.** Tres tablas
+  (`pre_nomina`, `pre_nomina_recibo`, `pre_nomina_detalle`) y ninguna columna
+  de estado: el borrador existe o no existe. Motivo: `recibo_pago` es la
+  única verdad de una nómina cerrada; guardar el borrador en las mismas tablas
+  obligaría a marcar filas como "provisional" y a limpiarlas en cada consulta.
+- **Un borrador por período (`UNIQUE (periodo_nomina_id)`).** Rehacerlo es
+  `eliminar` + `generar`. Motivo: dos borradores competirían por las mismas
+  novedades y cuotas, y `confirmar` no sabría cuál es la verdad.
+- **El borrador se borra al confirmar.** No queda snapshot: el recibo final es
+  la verdad. Motivo: un snapshot congelado se desincroniza del recibo en
+  cuanto alguien corrige algo, y nadie sabría cuál mirar.
+- **Solo `CALCULADA` y `MANUAL` son editables.** Una novedad, una cuota o un
+  concepto recurrente se corrige en su pantalla y se regenera. Motivo: una
+  sola verdad; el recibo final siempre coincide con el origen que lo produjo.
+  El backend calcula `editable`, el front no lo adivina.
+- **`PayrollWriter` concentra cálculo y escritura.** Vive en
+  `src/bo/Payroll/PayrollWriter.js`, no está sembrado en `metodo` y no es
+  invocable por `/execute`; `Period.procesar` y `PreNomina.confirmar` lo usan.
+  Motivo: el borrador y el recibo final eran dos copias del mismo cálculo que
+  tarde o temprano divergen.
+- **`Period.procesar` responde `409` si hay borrador sin confirmar.** Motivo:
+  procesar por detrás del borrador dejaría a RRHH editando una pre-nómina que
+  ya no se va a usar; el mensaje pide confirmarla o eliminarla.
+- **Permisos solo para `RRHH` y `Superusuario`.** `Administrador` opera el
+  resto de `Payroll` pero no la pre-nómina; `Empleado` no la ve. El front
+  valida por **nombre de perfil** (`RRHH`/`Superusuario`), no por rol, porque
+  `Administrador` comparte el rol `superuser`. La opción de menú `PreNomina`
+  (Payroll, orden 10) se siembra con los mismos dos perfiles.
 
 ### 2026-11-10
 

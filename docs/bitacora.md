@@ -362,3 +362,65 @@ es. Orden cronológico.
 - **Nota de orden.** La 012 revierte `HorasExtras` a los perfiles distintos de
   Superusuario; la 013 debe correr después. Volver a ejecutar la 012 sobre una
   base con la 013 quitaría el acceso a RRHH y habría que reaplicar la 013.
+
+## Pre-nómina: borrador editable de la nómina (2026-11-15)
+
+Spec 012. La pre-nómina es un **borrador por período** que RRHH genera, ve,
+edita, guarda, elimina y confirma para producir la nómina final.
+
+- **Esquema.** `db/migrations/014_pre_nomina.sql` crea `pre_nomina`
+  (`UNIQUE (periodo_nomina_id)`), `pre_nomina_recibo` y `pre_nomina_detalle`,
+  más el enum `origen_linea` (`CALCULADA`, `RECURRENTE`, `NOVEDAD`, `PRESTAMO`,
+  `LEY`, `MANUAL`). Todo cuelga con `ON DELETE CASCADE`: borrar el período (o
+  el borrador) no deja huérfanos. No hay columna de estado: el borrador existe
+  o no existe. `db/init.sql` no se toca; `db/schema.dbml` pasa a v10 (31
+  tablas). La migración se validó sobre un PostgreSQL 16 en Docker con la
+  cadena completa 001–013 + 014 (dos veces, idempotente) antes de aplicarla en
+  el branch de desarrollo de Neon; no se pudo crear un branch de respaldo
+  porque no hay `neonctl` ni `NEON_API_KEY` en la máquina, así que se tomó un
+  respaldo solo de esquema.
+- **Clase y permisos.** La 014 siembra la clase `Payroll/PreNomina` con
+  `generar`, `ver`, `guardar`, `eliminar` y `confirmar`, y la opción de menú
+  `PreNomina` (Payroll, orden 10). Solo `RRHH` y `Superusuario`;
+  `Administrador` queda fuera y `Empleado` no la ve. El front valida por
+  nombre de perfil porque `Administrador` comparte el rol `superuser`.
+- **`PayrollWriter`.** `src/bo/Payroll/PayrollWriter.js` extrae de
+  `Period.procesar` la construcción de líneas, el recálculo de `LEY` y
+  `APORTE_PATRONAL` con la tasa congelada, los totales y la escritura del
+  recibo. `Period.procesar` y `PreNomina.confirmar` lo comparten: un solo
+  cálculo para el borrador y para el recibo final. No está sembrado en
+  `metodo` y no es invocable por `/execute`.
+- **Edición.** Solo las líneas `CALCULADA` y `MANUAL` son editables; el
+  backend devuelve `editable` y el front no lo adivina. `guardar` recibe
+  `(preNominaId, version, { recibos })`, reemplaza las líneas editables de
+  cada recibo enviado (las omitidas se borran, las `id: null` se insertan como
+  `MANUAL`) y sube `version`. Se valida todo antes de aplicar nada; una versión
+  vieja responde `409`. Si el recálculo de ley da 0, la línea se borra (el
+  CHECK exige `monto > 0`).
+- **Confirmar.** En una transacción: bloquea período y borrador (siempre en
+  ese orden), revalida `BORRADOR` y `version`, exige que no haya novedades
+  aprobadas ni cuotas vencidas **fuera** del borrador, escribe el recibo
+  final, marca por id las novedades (`APLICADA`) y las cuotas (`DESCONTADA`),
+  deja el préstamo `PAGADO` si no le quedan cuotas y borra el borrador.
+  Un `23505` de cuota repetida se traduce a `409`.
+- **Período.** `Period.procesar` responde `409` si hay una pre-nómina sin
+  confirmar; `Period.listar` expone `preNominaId`/`preNominaVersion` y
+  `Period.ver` agrega `preNomina: { id, version } | null`.
+- **Verificación.** `pnpm test` **202/202** (40 en `test/preNomina.test.js`,
+  13 de regresión en `test/payrollWriter.test.js`) y
+  `node scripts/manual/pre_nomina_e2e.mjs --yes` **143/143 →
+  `PRE NOMINA E2E OK`** contra el branch de desarrollo: empleado semanal con
+  contrato por hora, afiliaciones, descuento recurrente, horas, préstamo y
+  novedad aprobada → `generar` (sin efectos secundarios) → `ver` →
+  `eliminar`/`generar` (idempotente) → `guardar` (sueldo 500, bono manual 25,
+  extra calculada fuera; neto 570,00 − 161,35 = 408,65 y patronal 74,10) →
+  `confirmar` → `pagar` → el empleado ve su recibo. El E2E deja la base como
+  la encontró.
+- **Diagrama.** `archify-out/payroll-backend-architecture.json` suma el nodo
+  `PayrollWriter`, `pre_nomina*` en el nodo de Neon y la vista "Pre-nómina";
+  `validate --quality showcase` 9/9 con 0 errores y 0 warnings, `deliver` OK y
+  `visual-check` pasa en 1440×900, 1600×1000, 1920×1080 y 2048×1320 (antes
+  desbordaba en tres de esos tamaños por las tarjetas; se recortaron a 2–3
+  ítems).
+- **Front pendiente.** La pantalla `/payroll/pre-nomina` vive en el otro repo;
+  el contrato queda en `PROMPT-FRONT.md`.
