@@ -48,6 +48,13 @@ y autentica.
   (`Publico`, `Empleado`, `GerenteRRHH`, `Administrador`, `Superusuario`) y
   sus permisos; `db/seed-usuario-prueba.sql` crea el usuario de prueba
   (`admin_prueba`/`Password123`) ligado a los cuatro perfiles.
+  `db/seed-datos-prueba.sql` (solo desarrollo, idempotente) siembra 12 personas
+  con contrato, cuentas, afiliaciones, recurrentes, horas, novedades, préstamos
+  y 13 períodos, más cuatro usuarios con clave `Password123` (`luis_gomez`,
+  `pedro_hernandez`, `carmen_diaz` como `Empleado`; `rosa_vargas` como
+  `Empleado` + `RRHH`). `scripts/manual/demo_periodos.mjs --yes` procesa y paga
+  algunos de esos períodos con los BO reales y deja una pre-nómina en borrador
+  para probar la pantalla.
 
 **Hecho:** el esquema del profesor está consolidado en `db/init.sql`
 (UUID en tablas transaccionales y `persona`/`usuario`/`refresh_token`;
