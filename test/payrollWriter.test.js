@@ -129,8 +129,14 @@ function crearDb({
           ],
         };
       }
-      if (texto === queries.findPeriodoById) {
+      if (
+        texto === queries.findPeriodoById ||
+        texto === queries.findPeriodoByIdForUpdate
+      ) {
         return { rows: periodo ? [periodo] : [] };
+      }
+      if (texto === queries.findPreNominaByPeriodo) {
+        return { rows: [] };
       }
       if (
         texto === queries.marcarNovedadesAplicadas ||

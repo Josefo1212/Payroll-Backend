@@ -74,12 +74,36 @@ export class Period {
     if (!usuarioId) {
       throw new ErrorNegocio("Debes iniciar sesión.", 401);
     }
-    const periodo = await this.#exigirPeriodo(periodoId);
-    if (periodo.estado !== "BORRADOR") {
-      throw new ErrorNegocio("Solo se puede procesar un período en BORRADOR.", 409);
-    }
+    await this.#exigirPeriodo(periodoId);
 
     return this.#db.transaction(async (cliente) => {
+      // Bloquea el período: procesar y confirmar se serializan sobre la misma
+      // fila para que no convivan borrador y recibo final.
+      const { rows: bloqueados } = await cliente.query(
+        queries.findPeriodoByIdForUpdate,
+        [periodoId],
+      );
+      const periodo = bloqueados[0];
+      if (!periodo) {
+        throw new ErrorNegocio("El período no existe.", 404);
+      }
+      if (periodo.estado !== "BORRADOR") {
+        throw new ErrorNegocio("Solo se puede procesar un período en BORRADOR.", 409);
+      }
+
+      // Un borrador sin confirmar tiene ediciones que el recibo final
+      // ignoraría; primero se confirma o se elimina.
+      const { rows: borradores } = await cliente.query(
+        queries.findPreNominaByPeriodo,
+        [periodo.id],
+      );
+      if (borradores.length > 0) {
+        throw new ErrorNegocio(
+          "El período tiene una pre-nómina sin confirmar; confírmala o elimínala antes de procesar.",
+          409,
+        );
+      }
+
       const writer = new PayrollWriter(cliente);
       const conceptos = await writer.conceptosBase();
       const contratos = await writer.contratosDelPeriodo(periodo);
@@ -194,7 +218,12 @@ export class Period {
 
   async listar() {
     const { rows } = await this.#db.query(queries.listarPeriodos);
-    return rows;
+    // Se agregan en camelCase para el front; el resto de la fila queda igual.
+    return rows.map((fila) => ({
+      ...fila,
+      preNominaId: fila.pre_nomina_id ?? null,
+      preNominaVersion: fila.pre_nomina_version ?? null,
+    }));
   }
 
   async ver(periodoId) {
@@ -202,6 +231,9 @@ export class Period {
     const { rows: recibos } = await this.#db.query(queries.findRecibosPorPeriodo, [
       periodo.id,
     ]);
-    return { periodo, recibos };
+    const preNomina = periodo.pre_nomina_id
+      ? { id: periodo.pre_nomina_id, version: periodo.pre_nomina_version }
+      : null;
+    return { periodo, recibos, preNomina };
   }
 }

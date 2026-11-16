@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PreNomina } from "../src/bo/Payroll/PreNomina.js";
+import { Period } from "../src/bo/Payroll/Period.js";
 import { queries } from "../src/bo/Payroll/loader.js";
 import { ErrorNegocio } from "../src/errors/ErrorNegocio.js";
 import { crearReq } from "./helpers.js";
@@ -227,6 +228,12 @@ function crearDb({
 
       if (texto === queries.findPeriodoById || texto === queries.findPeriodoByIdForUpdate) {
         return { rows: periodo ? [periodo] : [] };
+      }
+      if (texto === queries.listarPeriodos) {
+        return { rows: periodo ? [periodo] : [] };
+      }
+      if (texto === queries.findRecibosPorPeriodo) {
+        return { rows: [] };
       }
       if (texto === queries.findPreNominaByPeriodo) {
         return { rows: estado.borrador ? [{ id: estado.borrador.id, version: estado.borrador.version }] : [] };
@@ -1310,4 +1317,49 @@ test("confirmar traduce el 23505 de una cuota repetida a 409", async () => {
   );
   assert.equal(llamadasDe(db, queries.updatePeriodoEstado).length, 0);
   assert.equal(llamadasDe(db, queries.deletePreNomina).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Period: guarda de la pre-nómina en procesar y exposición en listar/ver
+// ---------------------------------------------------------------------------
+
+test("Period.procesar con una pre-nómina sin confirmar responde 409", async () => {
+  const db = crearDb(borradorBase());
+
+  await rechazaCon(
+    new Period(db, reqConSesion()).procesar(PERIODO_ID),
+    409,
+    /pre-nómina sin confirmar/,
+  );
+  assert.equal(llamadasDe(db, queries.insertRecibo).length, 0);
+  assert.equal(llamadasDe(db, queries.insertDetalleRecibo).length, 0);
+  assert.equal(llamadasDe(db, queries.updatePeriodoEstado).length, 0);
+});
+
+test("Period.listar y Period.ver exponen el borrador cuando existe", async () => {
+  const db = crearDb({
+    periodo: {
+      ...PERIODO,
+      pre_nomina_id: PRE_NOMINA_ID,
+      pre_nomina_version: 3,
+    },
+  });
+
+  const [fila] = await new Period(db, reqConSesion()).listar();
+  assert.equal(fila.preNominaId, PRE_NOMINA_ID);
+  assert.equal(fila.preNominaVersion, 3);
+
+  const { preNomina } = await new Period(db, reqConSesion()).ver(PERIODO_ID);
+  assert.deepEqual(preNomina, { id: PRE_NOMINA_ID, version: 3 });
+});
+
+test("Period.listar y Period.ver devuelven null sin borrador", async () => {
+  const db = crearDb();
+
+  const [fila] = await new Period(db, reqConSesion()).listar();
+  assert.equal(fila.preNominaId, null);
+  assert.equal(fila.preNominaVersion, null);
+
+  const { preNomina } = await new Period(db, reqConSesion()).ver(PERIODO_ID);
+  assert.equal(preNomina, null);
 });
