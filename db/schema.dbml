@@ -1,7 +1,9 @@
 // ==========================================
-// SISTEMA DE NÓMINA — MODELO DE DATOS v9 (28 tablas)
+// SISTEMA DE NÓMINA — MODELO DE DATOS v10 (31 tablas)
 // Regla: tablas transaccionales -> UUID; tablas maestras -> serial (int)
 // v8: se agrega refresh_token (sesiones JWT con rotación)
+// v10: se agrega la pre-nómina (pre_nomina, pre_nomina_recibo,
+//      pre_nomina_detalle) y el enum origen_linea (migración 014)
 //
 // Seguridad:
 //   persona > usuario > usuario_perfil < Perfil
@@ -123,6 +125,16 @@ Enum estado_afiliacion {
   ACTIVO
   SUSPENDIDO
   BAJA
+}
+
+// Origen de una línea del borrador; decide si es editable
+Enum origen_linea {
+  CALCULADA
+  RECURRENTE
+  NOVEDAD
+  PRESTAMO
+  LEY
+  MANUAL
 }
 
 // ------------------------------------------
@@ -554,6 +566,61 @@ Table detalle_recibo {
 }
 
 // ------------------------------------------
+// PRE-NÓMINA (BORRADOR) -> UUID
+// ------------------------------------------
+
+// Una fila ES un borrador: no hay columna de estado. Al confirmar se borra.
+Table pre_nomina {
+  id uuid [pk, default: `gen_random_uuid()`]
+  periodo_nomina_id uuid [not null, unique, ref: > periodo_nomina.id, note: 'Un solo borrador por período']
+  version integer [not null, default: 1, note: 'Bloqueo optimista: cada guardar la incrementa']
+  generado_por uuid [not null, ref: > usuario.id]
+  fecha_generacion timestamptz [not null, default: `now()`]
+  actualizado_por uuid [ref: > usuario.id]
+  fecha_actualizacion timestamptz
+}
+
+Table pre_nomina_recibo {
+  id uuid [pk, default: `gen_random_uuid()`]
+  pre_nomina_id uuid [not null, ref: > pre_nomina.id]
+  persona_id uuid [not null, ref: > persona.id]
+  contrato_id uuid [ref: > contrato.id]
+  total_asignaciones decimal(12,2) [not null, default: 0]
+  total_deducciones decimal(12,2) [not null, default: 0]
+  monto_total decimal(12,2) [not null, default: 0, note: 'Neto = asignaciones - deducciones (excluye aportes patronales)']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (pre_nomina_id, persona_id) [unique]
+    pre_nomina_id
+  }
+}
+
+// Espejo de detalle_recibo + origen (de dónde salió) + editada (ajuste manual)
+Table pre_nomina_detalle {
+  id uuid [pk, default: `gen_random_uuid()`]
+  pre_nomina_recibo_id uuid [not null, ref: > pre_nomina_recibo.id]
+  concepto_id int [not null, ref: > concepto.id]
+  origen origen_linea [not null]
+  cuota_prestamo_id uuid [unique, ref: > cuota_prestamo.id, note: 'Una cuota se descuenta una sola vez']
+  novedad_id uuid [ref: > novedad.id]
+  concepto_persona_id uuid [ref: > concepto_persona.id]
+  parametro_aporte_id int [ref: > parametro_aporte_ley.id, note: 'Congela la tasa de ley usada']
+  base_calculo decimal(12,2)
+  tasa_aplicada decimal(6,4)
+  cantidad_unidades decimal(8,2)
+  monto decimal(12,2) [not null]
+  editada boolean [not null, default: false, note: 'La línea fue ajustada a mano']
+
+  indexes {
+    pre_nomina_recibo_id
+    concepto_id
+  }
+
+  Note: 'CHECK chk_pre_nomina_origen_unico: como máximo UNA FK de origen. CHECK chk_pre_nomina_monto_positivo: monto > 0. Solo CALCULADA y MANUAL son editables.'
+}
+
+// ------------------------------------------
 // PRÉSTAMOS -> UUID
 // ------------------------------------------
 
@@ -638,6 +705,9 @@ TableGroup nomina {
   periodo_nomina
   recibo_pago
   detalle_recibo
+  pre_nomina
+  pre_nomina_recibo
+  pre_nomina_detalle
 }
 
 TableGroup prestamos {
