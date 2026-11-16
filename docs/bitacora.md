@@ -424,3 +424,90 @@ edita, guarda, elimina y confirma para producir la nómina final.
   ítems).
 - **Front pendiente.** La pantalla `/payroll/pre-nomina` vive en el otro repo;
   el contrato queda en `PROMPT-FRONT.md`.
+
+## 2026-11-16 — Auditoría de seguridad del backend
+
+Se revisaron cookies de sesión, hash de contraseñas, validación de entrada,
+CORS, headers, manejo de errores y cifrado de datos sensibles.
+
+- **Sesión.** `express-session` deja `MemoryStore`: migración
+  `015_sesion.sql` (`sesion(sid, sess jsonb, expira_en)` + índice) y
+  `src/database/SessionStore.js` con `get/set/destroy/touch`, TTL de 24 h,
+  `touch` en cada petición y barrido de vencidas cada 15 min. La sesión no
+  guarda contraseñas ni hashes.
+- **Cookies.** `httpOnly`, `SameSite=Lax`, `secure` en producción o con
+  `COOKIE_SECURE`; `logout` y `cambiarClave` las borran sin `maxAge` (con
+  `maxAge`, `clearCookie` deja la cookie viva). Toda respuesta lleva
+  `Cache-Control: no-store`.
+- **Login.** Se suma un límite por IP de intentos fallidos
+  (`LOGIN_RATE_MAX`/`LOGIN_RATE_WINDOW_MINUTES`, 10 en 15 min): cuenta solo
+  4xx salvo 429, limpia al acierto y responde `429` con `Retry-After`. El
+  bloqueo por cuenta y el orden deliberado de `Session.login` no cambian.
+- **Contraseñas.** Sin cambios en bcrypt (costo 12). `cambiarClave` rechaza
+  reutilizar la clave actual y revoca todos los refresh tokens del usuario;
+  las cookies de token se borran.
+- **Validación.** `Security/User/registrar` valida largos (cédula ≤ 20,
+  nombres ≤ 60, email ≤ 120, teléfono ≤ 20, dirección ≤ 250, username ≤ 60),
+  formatos (email, `[A-Za-z0-9._-]`, fechas `AAAA-MM-DD` reales), enums
+  (`sexo`, `estado_civil`), `monto > 0` y `horas_semanales` 0–168. Un dato
+  inválido responde `400` nombrando el campo en vez de `500` por `22001`.
+- **CORS y origen.** `src/config/http.js` es la única fuente de orígenes
+  (`FRONTEND_URLS`/`FRONTEND_URL`). CORS ya no lanza excepción para un origen
+  ajeno y `verificarOrigen` responde `403` en todo método que cambia estado
+  (login, logout, refresh, `/execute`). Sin `Origin`/`Referer` se deja pasar
+  (curl y E2E); `SameSite=Lax` sigue siendo la segunda barrera.
+- **Headers.** `helmet` explícito: CSP `default-src 'none'`,
+  `frame-ancestors 'none'`, `base-uri 'none'`, `form-action 'none'`,
+  `Referrer-Policy: no-referrer`, `nosniff`, CORP `same-site`, HSTS solo en
+  producción y `x-powered-by` apagado.
+- **Errores.** 404 JSON para rutas desconocidas, 400 para JSON roto, 413 para
+  cuerpo > 10kb, 500 genérico sin detalles y log con `datosSegurosDeError`.
+- **Dependencias.** `pnpm audit --prod` reportaba `body-parser 2.3.0` (DoS) y
+  `qs 6.16.0` (TypeError), transitivos de `express`. Se fijaron
+  `body-parser 2.4.0` y `qs 6.17.1` en `pnpm-workspace.yaml` (pnpm 12 ya no lee
+  `pnpm.overrides` de `package.json`). Auditoría final limpia.
+- **Cifrado de datos sensibles.** TLS a la BD (verificado por defecto),
+  bcrypt y refresh tokens hasheados. Se evaluó cifrar PII y `nro_cuenta` a
+  nivel de aplicación y se descartó: rompe los `UNIQUE`, la idempotencia de
+  los seeds y ningún BO lee el número de cuenta. Queda documentado como
+  riesgo residual en `docs/auditoria-seguridad.md`.
+- **Verificación.** `pnpm test` **228/228** (26 nuevas: rate limit, origen y
+  validación de `registrar`) y `pnpm audit --prod` limpio. Contra el servidor
+  real: login con origen ajeno `403`, con origen permitido `200`; `/execute`
+  autenticado `200` y con origen ajeno `403`; `/api/no-existe` `404` JSON;
+  JSON roto `400`; cuerpo grande `413`; la fila de `sesion` existe sin
+  `password_hash`, `touch` renueva `expira_en` y `logout` la borra y revoca
+  los tokens; 10 fallos desde una IP → `429` con `Retry-After` y otra IP sigue
+  entrando; `Payroll/PreNomina/ver` RRHH `200` y Empleado `403`.
+- **E2E.** `pre_nomina_e2e.mjs` aborta en el branch de desarrollo con el seed
+  de demo porque hay varios contratos vigentes sin fecha de fin en su período;
+  el script exige un branch desechable. No es una regresión de este cambio.
+- **Diagrama.** `archify` refrescado con el store de sesiones, el chequeo de
+  origen y los headers; `validate --quality showcase` 9/9, `deliver` y
+  `visual-check` en los cuatro tamaños.
+
+## 2026-11-16 — Topes de texto y datos mínimos expuestos
+
+- **Textos libres con tope.** `src/services/TextoService.js` centraliza
+  `requerido`/`opcional` (recorte con `trim`, máximo por campo) y responde
+  `400` nombrando el campo y el máximo. Se aplica a `Hours.registrar` y
+  `registrarExtra` (`observacion` 200), `Novedad.registrar` (`observacion`
+  200), `Concept.asignarRecurrente` (`observacion` 200), `Period.crear`
+  (`descripcion` 200) y `Period.pagar` (`referencia_pago` 60),
+  `Affiliation.registrar` (`nro_afiliacion` 30) y `User.registrar`
+  (`laboral.motivo` 150). `Security/User` reutiliza el mismo servicio en vez
+  de mantener una copia.
+- **Selector de personas más angosto.** `Security/User/listarPersonas`
+  devolvía `email` y `monto_salario`; ninguna pantalla los usaba (los
+  selectores muestran nombres, cédula y cargo; la tabla de usuarios usa
+  `username`, `usuario_activo` y el contrato). Se quitaron de la consulta y
+  del tipo `PersonaItem`. Verificado contra Neon: la consulta corre y no
+  trae esas columnas.
+- **Front con `maxLength`.** `src/constants/inputLimits.ts` replica los
+  `varchar` de la BD; se aplicó en registro, login, registro público, perfil,
+  ajustes, solicitudes (incluido el textarea de revisión), departamentos,
+  conceptos, novedades, horas, extras, afiliaciones, períodos y pre-nómina
+  (`inputMode="decimal"` en monto/cantidad). `PasswordInput` ahora reenvía
+  `maxLength`.
+- **Verificación.** `pnpm test` **235/235** (7 nuevas en
+  `test/texto.test.js`) y `tsc --noEmit` limpio en el front.

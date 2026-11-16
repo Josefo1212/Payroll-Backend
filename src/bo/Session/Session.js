@@ -90,10 +90,10 @@ export class Session {
     await new Promise((resolve, reject) => {
       sesion.destroy((error) => (error ? reject(error) : resolve()));
     });
-    this.#req?.res?.clearCookie(COOKIE_ACCESS, tokenService.opcionesCookie());
+    this.#req?.res?.clearCookie(COOKIE_ACCESS, tokenService.opcionesBorradoCookie());
     this.#req?.res?.clearCookie(
       COOKIE_REFRESH,
-      tokenService.opcionesCookie({ refresh: true }),
+      tokenService.opcionesBorradoCookie(),
     );
     console.log(`Logout: usuario ${userID}.`);
     return { ok: true };

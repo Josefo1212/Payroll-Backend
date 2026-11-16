@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { User } from "../src/bo/Security/User.js";
 import { ErrorNegocio } from "../src/errors/ErrorNegocio.js";
-import { crearDbFalso, crearReq, queries, HASH_CLAVE } from "./helpers.js";
+import { crearDbFalso, crearReq, crearRes, queries, HASH_CLAVE } from "./helpers.js";
 
 // La validación de contraseña corre antes de tocar la BD. Este doble falla si
 // `registrar` intenta abrir una transacción: así una prueba solo puede pasar
@@ -232,4 +232,130 @@ test("cambiarClave actualiza el hash y limpia la bandera de la sesión", async (
   // El hash guardado ya no corresponde a la clave anterior.
   const llamada = db.llamadas.find((l) => typeof l.texto === "string" && l.texto.includes("UPDATE usuario") && l.texto.includes("password_hash"));
   assert.notEqual(llamada.params[0], HASH_CLAVE);
+});
+
+test("cambiarClave rechaza reutilizar la contraseña actual", async () => {
+  const db = crearDbFalso({});
+  const usuario = new User(db, crearReq({ userID: 1 }));
+
+  await assert.rejects(
+    () => usuario.cambiarClave("Password123", "Password123"),
+    (error) => {
+      assert.ok(error instanceof ErrorNegocio);
+      assert.equal(error.status, 400);
+      assert.match(error.message, /distinta de la actual/);
+      return true;
+    },
+  );
+  assert.equal(
+    db.llamadas.some((l) => typeof l.texto === "string" && l.texto.includes("SET password_hash")),
+    false,
+    "no actualiza el hash si la clave se reutiliza",
+  );
+});
+
+test("cambiarClave revoca los refresh tokens y borra las cookies de token", async () => {
+  const db = crearDbFalso({});
+  const req = crearReq({ userID: 1 });
+  req.res = crearRes();
+  const usuario = new User(db, req);
+
+  await usuario.cambiarClave("Password123", "NuevaClave123");
+
+  assert.ok(
+    db.llamadas.some(
+      (l) =>
+        typeof l.texto === "string" &&
+        l.texto.includes("UPDATE refresh_token") &&
+        l.texto.includes("revocado_en = NOW()"),
+    ),
+    "revoca los refresh tokens del usuario",
+  );
+  assert.deepEqual(req.res.cookiesLimpiadas, ["access_token", "refresh_token"]);
+});
+
+// ---------------------------------------------------------------------------
+// Validación de entrada de registrar: los límites replican los varchar de la
+// BD. Cada caso debe responder 400 antes de abrir la transacción, no un 500
+// por 22001 de PostgreSQL.
+// ---------------------------------------------------------------------------
+
+const rechazaRegistro = async (cambios, fragmento) => {
+  const usuario = new User(dbQueRevienta, {});
+  await assert.rejects(
+    () => usuario.registrar({ ...base, password: "abcdefg1", ...cambios }),
+    (error) => {
+      assert.ok(error instanceof ErrorNegocio);
+      assert.equal(error.status, 400);
+      assert.match(error.message, fragmento);
+      return true;
+    },
+  );
+};
+
+test("registrar rechaza una cédula de más de 20 caracteres", async () => {
+  await rechazaRegistro({ cedula: "V-" + "1".repeat(20) }, /cedula/);
+});
+
+test("registrar rechaza un email con formato inválido", async () => {
+  await rechazaRegistro({ email: "sin-arroba.test" }, /email/);
+});
+
+test("registrar rechaza un email de más de 120 caracteres", async () => {
+  await rechazaRegistro({ email: `${"a".repeat(120)}@x.test` }, /email/);
+});
+
+test("registrar rechaza un username con caracteres no permitidos", async () => {
+  await rechazaRegistro({ username: "ana perez" }, /username/);
+});
+
+test("registrar rechaza un username vacío", async () => {
+  await rechazaRegistro({ username: "   " }, /username/);
+});
+
+test("registrar rechaza un sexo fuera del enum", async () => {
+  await rechazaRegistro({ sexo: "X" }, /sexo/);
+});
+
+test("registrar rechaza un estado civil fuera del enum", async () => {
+  await rechazaRegistro({ estado_civil: "NOVIO" }, /estado_civil/);
+});
+
+test("registrar rechaza una fecha que no existe", async () => {
+  await rechazaRegistro({ fecha_nacimiento: "2026-02-31" }, /fecha_nacimiento/);
+});
+
+test("registrar rechaza nombres de más de 60 caracteres", async () => {
+  await rechazaRegistro({ primer_nombre: "A".repeat(61) }, /primer_nombre/);
+});
+
+test("registrar rechaza un salario que no es mayor que cero", async () => {
+  await rechazaRegistro(
+    {
+      laboral: {
+        cargo_id: 1,
+        fecha_inicio: "2026-01-01",
+        tipo_pago: "SALARIO_FIJO",
+        frecuencia_pago: "MENSUAL",
+        monto: 0,
+      },
+    },
+    /monto/,
+  );
+});
+
+test("registrar rechaza horas semanales fuera de rango", async () => {
+  await rechazaRegistro(
+    {
+      laboral: {
+        cargo_id: 1,
+        fecha_inicio: "2026-01-01",
+        tipo_pago: "POR_HORA",
+        frecuencia_pago: "SEMANAL",
+        monto: 10,
+        horas_semanales: 200,
+      },
+    },
+    /horas_semanales/,
+  );
 });

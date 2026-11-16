@@ -68,6 +68,15 @@ class TokenService {
       : 1000 * 60 * 15,
     path: "/",
   });
+
+  // Sin maxAge: en clearCookie, un maxAge positivo reescribe el `expires` al
+  // futuro y la cookie quedaría viva con valor vacío en vez de borrarse.
+  opcionesBorradoCookie = () => ({
+    httpOnly: true,
+    sameSite: "lax",
+    secure: esProduccion,
+    path: "/",
+  });
 }
 
 export { TokenService };

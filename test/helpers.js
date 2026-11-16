@@ -261,6 +261,7 @@ function crearRes() {
     statusCode: null,
     body: null,
     cookieLimpiada: null,
+    cookiesLimpiadas: [],
     status(codigo) {
       this.statusCode = codigo;
       return this;
@@ -271,6 +272,7 @@ function crearRes() {
     },
     clearCookie(nombre) {
       this.cookieLimpiada = nombre;
+      this.cookiesLimpiadas.push(nombre);
       return this;
     },
   };

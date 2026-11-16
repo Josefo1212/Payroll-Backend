@@ -1,6 +1,7 @@
 import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { PayrollWriter } from "./PayrollWriter.js";
+import { textoService } from "../../services/TextoService.js";
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/;
 const FRECUENCIAS = new Set(["SEMANAL", "QUINCENAL", "MENSUAL"]);
@@ -44,6 +45,8 @@ export class Period {
       throw new ErrorNegocio("fecha_fin no puede ser anterior a fecha_inicio.", 400);
     }
 
+    const descripcionLimpia = textoService.opcional(descripcion, "descripcion", 200);
+
     const { rows: existentes } = await this.#db.query(queries.findPeriodoPorFechas, [
       frecuencia,
       fechaInicio,
@@ -58,7 +61,7 @@ export class Period {
         fechaInicio,
         fechaFin,
         frecuencia,
-        descripcion,
+        descripcionLimpia,
       ]);
       return rows[0];
     } catch (error) {
@@ -166,13 +169,15 @@ export class Period {
       );
     }
 
+    const referenciaLimpia = textoService.opcional(referenciaPago, "referencia_pago", 60);
+
     return this.#db.transaction(async (cliente) => {
       const { rows: recibos } = await cliente.query(queries.pagarRecibosPeriodo, [
         periodo.id,
         fechaPago,
         metodoPago,
         cuentaBancariaId,
-        referenciaPago,
+        referenciaLimpia,
         usuarioId,
       ]);
       const { rows: actualizado } = await cliente.query(queries.updatePeriodoEstado, [

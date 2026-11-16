@@ -183,6 +183,19 @@ orden 10). `pnpm test` 202/202 (40 en `test/preNomina.test.js`) y
 `archify` refrescado (nodo `PayrollWriter`, `pre_nomina*` en Neon y vista
 "Pre-nómina").
 
+**Auditoría de seguridad implementada (2026-11-16):** sesión persistida en
+PostgreSQL (`db/migrations/015_sesion.sql` + `src/database/SessionStore.js`,
+tabla `sesion`, 32 tablas en `db/schema.dbml` v11); `src/config/http.js` es la
+única fuente de orígenes para CORS y para `verificarOrigen` (403 en métodos
+que cambian estado); `src/middlewares/rateLimit.js` limita por IP los fallos de
+login (429 + `Retry-After`); `helmet` con CSP explícita, `no-referrer`, HSTS en
+producción y `no-store` global; 404/400/413 en JSON; `Security/User/registrar`
+valida largos, formatos, fechas, enums y monto antes de la transacción;
+`cambiarClave` rechaza reutilizar la clave y revoca todos los refresh tokens.
+`pnpm audit --prod` sin vulnerabilidades (overrides `body-parser 2.4.0` y
+`qs 6.17.1` en `pnpm-workspace.yaml`). `pnpm test` 228/228. El detalle, los
+riesgos residuales y la verificación están en `docs/auditoria-seguridad.md`.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), la pantalla
 `/payroll/pre-nomina` (contrato en `PROMPT-FRONT.md`, repo del front), y
 migrar las consultas de `queries.yaml` a los BO.
@@ -576,11 +589,112 @@ o datos desechables), y ninguna prueba depende de otra.
   1037) y a 1600×1000; con cuatro tarjetas de 2–3 ítems y el diagrama en tres
   filas (60/220/360) pasa en los cuatro tamaños. Si se agrega contenido,
   recortar tarjetas antes que nodos o tipografía.
+- **`res.clearCookie` con `maxAge` no borra la cookie.** Express reescribe
+  `expires` al futuro cuando recibe `maxAge` positivo; la cookie queda viva con
+  valor vacío. Las cookies de token se borran con
+  `tokenService.opcionesBorradoCookie()`, que no lleva `maxAge`.
+- **El sid del store no es el valor de la cookie.** `connect.sid` viaja firmado
+  (`s:<sid>.<firma>`); para buscar la fila en `sesion` hay que quitar el `s:` y
+  la firma. Comparar el valor crudo de la cookie con `sid` siempre da 0 filas.
+- **`dotenv` "injected env (0)" no significa que falte `.env`.** Significa que
+  todas las variables ya estaban en `process.env` (otro import las cargó
+  antes). No es un error de configuración.
+- **El límite de login por IP se prueba con `X-Forwarded-For` y un usuario
+  inexistente.** Así no se bloquea una cuenta real ni la IP del desarrollador;
+  con `trust proxy` 1 Express toma esa cabecera como `req.ip`. En producción
+  eso exige estar detrás de un proxy de confianza.
+- **CORS y CSRF deben leer la misma lista de orígenes.** Si CORS usa
+  `FRONTEND_URLS` y el chequeo de origen usa `FRONTEND_URL`, configurar una
+  sola deja el front bloqueado por un lado y abierto por el otro. La fuente
+  única es `src/config/http.js`.
+- **Un origen ajeno no debe hacer que CORS lance una excepción.** Con
+  `callback(new Error(...))` el error cae en el handler genérico y responde
+  `500`; lo correcto es no emitir cabeceras CORS y dejar que
+  `verificarOrigen` responda `403` en los métodos que cambian estado.
+- **Permitir peticiones sin `Origin`/`Referer` no abre CSRF.** Un navegador
+  manda `Origin` en un POST cross-site y `SameSite=Lax` no envía la cookie;
+  bloquear a los clientes sin `Origin` solo rompe curl y los E2E.
+- **`pnpm` 12 ya no lee `pnpm.overrides` de `package.json`.** Los overrides
+  viven en `pnpm-workspace.yaml`; en `package.json` se ignoran con un warning
+  y `pnpm audit` sigue viendo las versiones viejas.
+- **Validar largos antes de la transacción convierte un `22001` en un `400`
+  útil.** Sin esa validación, un nombre de 61 caracteres o un email de 121
+  llegan a PostgreSQL y el usuario recibe un `500` que no dice qué campo
+  corregir.
+- **Los textos libres de `Payroll` también tienen tope.** `observacion`,
+  `descripcion`, `referencia_pago`, `nro_afiliacion` y `motivo` llegaban
+  directo a la BD; un texto largo devolvía `22001` (500). Ahora pasan por
+  `textoService.opcional`/`requerido`, que recorta y responde `400` con el
+  campo y el máximo.
+- **El selector de personas no debe traer la fila completa.** `findAllPersonas`
+  devolvía `email` y `monto_salario`, que el front no usa. Recortar la consulta
+  a los campos que la pantalla pinta reduce la PII y el salario expuestos sin
+  tocar permisos ni contratos del endpoint.
+- **`pre_nomina_e2e.mjs` no corre en el branch de desarrollo con el seed de
+  demo.** Los contratos de demo no tienen fecha de fin y quedan vigentes en
+  cualquier período futuro; el script aborta si hay más de un contrato en su
+  período. Necesita un branch desechable, no es una regresión.
 
 ## Decisiones de diseño
 
 Registro de decisiones con su motivo. Las viejas no se editan: si una cambia,
 se agrega una nueva que la reemplaza.
+
+### 2026-11-16
+
+- **La sesión vive en PostgreSQL, no en `MemoryStore`.** Migración
+  `015_sesion.sql` y `src/database/SessionStore.js`. Motivo: `MemoryStore`
+  pierde las sesiones al reiniciar, no se comparte entre instancias, no se
+  puede invalidar desde otro nodo y su mapa crece sin límite. La tabla guarda
+  solo el JSON de `express-session` (userID, perfiles, banderas), nunca
+  contraseñas ni hashes, y se barre por `expira_en` cada 15 minutos.
+- **Una sola fuente de orígenes para CORS y CSRF.** `src/config/http.js`
+  exporta `origenesPermitidos`, `esOrigenPermitido` y `cookieSegura`. Motivo:
+  CORS leía `FRONTEND_URLS` y el chequeo de origen leía `FRONTEND_URL`;
+  configurar una sola variable dejaba el front bloqueado o el endpoint abierto.
+- **`verificarOrigen` se aplica a todo método que cambia estado, no solo a
+  `logout`/`refresh`.** Cubre también `login` y `/execute`. Sin `Origin` ni
+  `Referer` se deja pasar (curl, scripts, clientes servidor-a-servidor);
+  `SameSite=Lax` y el navegador que siempre manda `Origin` en un POST
+  cross-site son la barrera real.
+- **El límite de fallos de login es por IP y cuenta solo 4xx.** 10 fallos en
+  15 minutos (configurable), `429` con `Retry-After`, y un acierto limpia el
+  contador. Motivo: frena la fuerza bruta distribuida sin bloquear logins
+  legítimos repetidos (demos, E2E) ni contar los propios 429. El bloqueo por
+  cuenta sigue siendo la defensa principal; con varias instancias el contador
+  habría que compartirlo.
+- **`cambiarClave` revoca todos los refresh tokens y borra las cookies de
+  token.** Motivo: si la clave se cambia porque estaba comprometida, un refresh
+  token robado no debe seguir sirviendo. La sesión actual sobrevive (sigue
+  autenticada por `connect.sid`); el front vuelve a autenticarse para obtener
+  tokens nuevos. Además se rechaza reutilizar la clave actual.
+- **`registrar` valida en el borde, antes de la transacción.** Largos,
+  formatos, fechas reales, enums y `monto > 0`. Motivo: los `varchar` de la BD
+  convertían un dato largo en `22001` y el cliente recibía un `500` sin saber
+  qué campo corregir; un email sin `@` o un username con espacios no deben
+  llegar a la BD.
+- **No se cifra a nivel de aplicación la PII ni `nro_cuenta`.** Se evaluó y se
+  descartó: rompe los `UNIQUE` (cédula, email, `(banco_id, nro_cuenta)`), la
+  idempotencia de los seeds y hoy ningún BO lee el número de cuenta. La
+  protección es TLS en tránsito (verificado por defecto), cifrado en reposo de
+  Neon y acceso restringido. Queda como riesgo residual documentado en
+  `docs/auditoria-seguridad.md`; si se exige, primero hay que decidir cómo se
+  busca por cédula/email.
+- **Se fijan `body-parser 2.4.0` y `qs 6.17.1` con `overrides`.** Motivo:
+  `pnpm audit --prod` reportaba un DoS en `body-parser 2.3.0` y un TypeError en
+  `qs 6.16.0`, ambos transitivos de `express`. En pnpm 12 los overrides viven
+  en `pnpm-workspace.yaml`, no en `package.json`.
+- **Los topes de texto viven en un solo servicio y en un solo módulo del
+  front.** `src/services/TextoService.js` (backend) y
+  `src/constants/inputLimits.ts` (front) replican los `varchar` de la BD. Un
+  campo nuevo toma su valor de ahí: el backend responde `400` con el máximo y
+  el front corta con `maxLength`, en vez de dejar que cada pantalla invente su
+  número.
+- **`listarPersonas` devuelve solo lo que la pantalla pinta.** Se quitaron
+  `email` y `monto_salario`; el selector de nómina usa nombres, cédula y cargo,
+  y la tabla de usuarios usa `username`, `usuario_activo` y el contrato.
+  Motivo: el endpoint lo consumen tres pantallas y devolver la fila completa
+  exponía PII y salario sin que nadie los mostrara.
 
 ### 2026-11-15
 

@@ -1,6 +1,11 @@
 import { queries } from "./loader.js";
+// Los refresh tokens son del subsistema Session: se reutiliza su consulta en
+// vez de duplicar el SQL de revocación en dos queries.yaml.
+import { queries as sessionQueries } from "../Session/loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { passwordService } from "../../services/PasswordService.js";
+import { tokenService } from "../../services/TokenService.js";
+import { textoService } from "../../services/TextoService.js";
 
 const PERFIL_PROTEGIDO = "Superusuario";
 
@@ -12,7 +17,76 @@ const PERFILES_PRIVILEGIADOS = new Set([
   "GerenteRRHH",
 ]);
 
+const COOKIE_ACCESS = "access_token";
+const COOKIE_REFRESH = "refresh_token";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Los límites replican los varchar de persona/usuario. Validar acá convierte
+// un 22001 de PostgreSQL (que hoy termina en 500) en un 400 que nombra el
+// campo. Los formatos también se validan acá: un email sin @ o un username
+// con espacios no debe llegar a la BD.
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const USERNAME = /^[A-Za-z0-9._-]+$/;
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+const SEXOS = new Set(["M", "F"]);
+const ESTADOS_CIVILES = new Set([
+  "SOLTERO",
+  "CASADO",
+  "DIVORCIADO",
+  "VIUDO",
+  "CONCUBINO",
+]);
+
+const exigirTexto = textoService.requerido;
+const opcionalTexto = textoService.opcional;
+
+const validarFecha = (valor, campo, { obligatoria = false } = {}) => {
+  if (valor === undefined || valor === null || valor === "") {
+    if (obligatoria) {
+      throw new ErrorNegocio(`El campo ${campo} es obligatorio.`, 400);
+    }
+    return null;
+  }
+  if (typeof valor !== "string" || !FECHA_ISO.test(valor)) {
+    throw new ErrorNegocio(
+      `El campo ${campo} debe tener formato AAAA-MM-DD.`,
+      400,
+    );
+  }
+
+  const [anio, mes, dia] = valor.split("-").map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  const valida =
+    fecha.getUTCFullYear() === anio &&
+    fecha.getUTCMonth() === mes - 1 &&
+    fecha.getUTCDate() === dia;
+  if (!valida) {
+    throw new ErrorNegocio(`El campo ${campo} no es una fecha válida.`, 400);
+  }
+  return valor;
+};
+
+const validarOpcion = (valor, campo, permitidos) => {
+  if (valor === undefined || valor === null || valor === "") {
+    return null;
+  }
+  if (!permitidos.has(valor)) {
+    throw new ErrorNegocio(
+      `El campo ${campo} debe ser uno de: ${[...permitidos].join(", ")}.`,
+      400,
+    );
+  }
+  return valor;
+};
+
+const validarEmail = (valor) => {
+  const email = opcionalTexto(valor, "email", 120);
+  if (email && !EMAIL.test(email)) {
+    throw new ErrorNegocio("El email no tiene un formato válido.", 400);
+  }
+  return email;
+};
 
 export class User {
   #db;
@@ -43,9 +117,24 @@ export class User {
       laboral,
     } = datos ?? {};
 
-    if (!cedula || !primer_nombre || !primer_apellido || !username || !password) {
+    const persona = {
+      cedula: exigirTexto(cedula, "cedula", 20),
+      primer_nombre: exigirTexto(primer_nombre, "primer_nombre", 60),
+      primer_apellido: exigirTexto(primer_apellido, "primer_apellido", 60),
+      segundo_nombre: opcionalTexto(segundo_nombre, "segundo_nombre", 60),
+      segundo_apellido: opcionalTexto(segundo_apellido, "segundo_apellido", 60),
+      fecha_nacimiento: validarFecha(fecha_nacimiento, "fecha_nacimiento"),
+      sexo: validarOpcion(sexo, "sexo", SEXOS),
+      estado_civil: validarOpcion(estado_civil, "estado_civil", ESTADOS_CIVILES),
+      nro_tlf: opcionalTexto(nro_tlf, "nro_tlf", 20),
+      email: validarEmail(email),
+      direccion: opcionalTexto(direccion, "direccion", 250),
+    };
+
+    const nombreUsuario = exigirTexto(username, "username", 60);
+    if (!USERNAME.test(nombreUsuario)) {
       throw new ErrorNegocio(
-        "Faltan datos obligatorios: cedula, primer_nombre, primer_apellido, username y password.",
+        "El username solo admite letras, números, punto, guion y guion bajo.",
         400,
       );
     }
@@ -70,6 +159,7 @@ export class User {
       throw new ErrorNegocio("Los perfiles deben ser ids enteros positivos.", 400);
     }
 
+    let motivoSalario = null;
     if (laboral) {
       if (!laboral.cargo_id || !laboral.fecha_inicio || !laboral.tipo_pago || !laboral.frecuencia_pago || laboral.monto === undefined || laboral.monto === null) {
         throw new ErrorNegocio("Datos laborales incompletos: cargo_id, fecha_inicio, tipo_pago, frecuencia_pago y monto son obligatorios.", 400);
@@ -80,13 +170,30 @@ export class User {
       if (!["SEMANAL", "QUINCENAL", "MENSUAL"].includes(laboral.frecuencia_pago)) {
         throw new ErrorNegocio("frecuencia_pago inválido. Debe ser SEMANAL, QUINCENAL o MENSUAL.", 400);
       }
+      if (!(Number(laboral.monto) > 0)) {
+        throw new ErrorNegocio("El monto del salario debe ser mayor que cero.", 400);
+      }
+      validarFecha(laboral.fecha_inicio, "laboral.fecha_inicio", { obligatoria: true });
+      validarFecha(laboral.fecha_fin, "laboral.fecha_fin");
+      validarFecha(laboral.vigente_desde, "laboral.vigente_desde");
+      validarFecha(laboral.vigente_hasta, "laboral.vigente_hasta");
+      motivoSalario = opcionalTexto(laboral.motivo, "laboral.motivo", 150);
+      if (laboral.horas_semanales != null) {
+        const horas = Number(laboral.horas_semanales);
+        if (!Number.isFinite(horas) || horas <= 0 || horas > 168) {
+          throw new ErrorNegocio(
+            "laboral.horas_semanales debe estar entre 0 y 168.",
+            400,
+          );
+        }
+      }
     }
 
     try {
       return await this.#db.transaction(async (cliente) => {
         const duplicados = await cliente.query(queries.existePersona, [
-          cedula,
-          email ?? null,
+          persona.cedula,
+          persona.email,
         ]);
         if (duplicados.rows[0].cedula || duplicados.rows[0].email) {
           throw new ErrorNegocio(
@@ -96,7 +203,7 @@ export class User {
         }
 
         const usuarioDuplicado = await cliente.query(queries.existeUsuario, [
-          username,
+          nombreUsuario,
         ]);
         if (usuarioDuplicado.rows[0].username) {
           throw new ErrorNegocio("Ya existe un usuario con ese username.", 409);
@@ -124,23 +231,23 @@ export class User {
 
         const passwordHash = await passwordService.hashear(password);
 
-        const persona = await cliente.query(queries.insertPersona, [
-          cedula,
-          primer_nombre,
-          segundo_nombre ?? null,
-          primer_apellido,
-          segundo_apellido ?? null,
-          fecha_nacimiento ?? null,
-          sexo ?? null,
-          estado_civil ?? null,
-          nro_tlf ?? null,
-          email ?? null,
-          direccion ?? null,
+        const personaInsertada = await cliente.query(queries.insertPersona, [
+          persona.cedula,
+          persona.primer_nombre,
+          persona.segundo_nombre,
+          persona.primer_apellido,
+          persona.segundo_apellido,
+          persona.fecha_nacimiento,
+          persona.sexo,
+          persona.estado_civil,
+          persona.nro_tlf,
+          persona.email,
+          persona.direccion,
         ]);
 
         const usuario = await cliente.query(queries.insertUsuario, [
-          persona.rows[0].id,
-          username,
+          personaInsertada.rows[0].id,
+          nombreUsuario,
           passwordHash,
         ]);
 
@@ -153,7 +260,7 @@ export class User {
         if (laboral) {
           const vigenteDesde = laboral.vigente_desde || laboral.fecha_inicio;
           const contrato = await cliente.query(queries.insertContrato, [
-            persona.rows[0].id,
+            personaInsertada.rows[0].id,
             Number(laboral.cargo_id),
             laboral.fecha_inicio,
             laboral.fecha_fin ?? null,
@@ -167,7 +274,7 @@ export class User {
             laboral.monto,
             vigenteDesde,
             laboral.vigente_hasta ?? null,
-            laboral.motivo ?? null,
+            motivoSalario,
           ]);
         }
 
@@ -279,8 +386,33 @@ export class User {
       throw new ErrorNegocio("La contraseña actual es incorrecta.", 401);
     }
 
+    const reutilizaActual = await passwordService.verificar(
+      nueva,
+      usuario.password_hash,
+    );
+    if (reutilizaActual) {
+      throw new ErrorNegocio(
+        "La nueva contraseña debe ser distinta de la actual.",
+        400,
+      );
+    }
+
     const passwordHash = await passwordService.hashear(nueva);
     await this.#db.query(queries.updatePassword, [passwordHash, usuarioId]);
+
+    // Cambiar la clave cierra las otras sesiones con token: si la clave se
+    // cambió porque estaba comprometida, un refresh token robado no debe
+    // seguir sirviendo. La sesión actual sobrevive; el front vuelve a
+    // autenticarse para obtener tokens nuevos.
+    await this.#db.query(sessionQueries.revokeAllUserTokens, [usuarioId]);
+    this.#req?.res?.clearCookie(
+      COOKIE_ACCESS,
+      tokenService.opcionesBorradoCookie(),
+    );
+    this.#req?.res?.clearCookie(
+      COOKIE_REFRESH,
+      tokenService.opcionesBorradoCookie(),
+    );
 
     if (this.#req?.session) {
       this.#req.session.debeCambiarClave = false;
