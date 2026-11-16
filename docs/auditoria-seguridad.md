@@ -76,7 +76,20 @@ Sin cambios en el algoritmo (bcrypt costo 12). Se agregó:
 - `sexo` y `estado_civil` dentro del enum de la BD.
 - `laboral.monto > 0` y `horas_semanales` entre 0 y 168.
 
+La misma regla se extrajo a `src/services/TextoService.js` (`requerido` /
+`opcional`, con `trim` y largo máximo) y se aplica a los textos libres de los
+BO de `Payroll`, que antes llegaban directo a la BD:
+
+- `Hours.registrar` / `registrarExtra` → `observacion` ≤ 200.
+- `Novedad.registrar` → `observacion` ≤ 200.
+- `Concept.asignarRecurrente` → `observacion` ≤ 200.
+- `Period.crear` → `descripcion` ≤ 200; `Period.pagar` → `referencia_pago` ≤ 60.
+- `Affiliation.registrar` → `nro_afiliacion` ≤ 30.
+- `Security/User.registrar` → `laboral.motivo` ≤ 150.
+
 El body parser sigue limitado a `10kb`; un cuerpo mayor responde `413` en JSON.
+El front replica los mismos topes con `maxLength` (`src/constants/inputLimits.ts`)
+para que el usuario no escriba de más ni llegue al `400`.
 
 ### 5. CORS, origen y CSRF
 
@@ -117,6 +130,25 @@ transitivos de `express`. Se fijaron `body-parser 2.4.0` y `qs 6.17.1` con
 `overrides` en `pnpm-workspace.yaml`. Auditoría final: **sin
 vulnerabilidades conocidas**.
 
+### 9. Datos mínimos expuestos
+
+`Security/User/listarPersonas` devolvía la fila completa del selector: incluía
+`email` y `monto_salario`. Ninguno de los dos se usa en el front (los
+selectores de nómina muestran `primer_nombre`, `primer_apellido`, `cedula` y
+`cargo`; la tabla de usuarios usa `username`, `usuario_activo` y el contrato).
+Se recortó la consulta a lo necesario: se quitaron `p.email` y el `LATERAL` de
+`contrato_salario` que calculaba `monto_salario`.
+
+Revisión de exposición restante:
+
+- `Session` nunca devuelve `password_hash` (la consulta lo trae para comparar,
+  el BO lo descarta).
+- `Receipt.miDesglose`/`misRecibos`/`misHoras` filtran por la persona de la
+  sesión; `Receipt.ver` y `listarPorPeriodo` son de gestores.
+- Los logs solo registran ids de usuario, nunca cédula, email ni clave.
+- El front no guarda PII en `localStorage` (solo el tema y preferencias
+  visuales); la sesión vive en cookies `httpOnly` y en el estado de React.
+
 ## Riesgos residuales (conscientes)
 
 1. **Sin cifrado de campo para PII ni número de cuenta.** `persona`
@@ -144,8 +176,8 @@ vulnerabilidades conocidas**.
 
 ## Verificación
 
-- `pnpm test`: **228/228** (26 nuevas: rate limit, origen y validación de
-  `registrar`).
+- `pnpm test`: **235/235** (26 de la auditoría original + 7 de
+  `test/texto.test.js`: límites de texto y `observacion` en horas extra).
 - `pnpm audit --prod`: sin vulnerabilidades.
 - Contra el servidor real (puerto 3002) y Neon de desarrollo:
   - `POST /api/login` con `Origin: http://evil.test` → `403`; con el origen
@@ -158,6 +190,8 @@ vulnerabilidades conocidas**.
   - 10 fallos de login desde una IP (`X-Forwarded-For` de prueba) → el
     intento 11 responde `429` con `Retry-After`; otra IP sigue entrando.
   - `Payroll/PreNomina/ver` como RRHH → `200`; como Empleado → `403`.
+  - `Security/User/listarPersonas`: la consulta recortada corre contra Neon y
+    ya no devuelve `email` ni `monto_salario`.
 - `scripts/manual/pre_nomina_e2e.mjs --yes` **no corre en el branch de
   desarrollo actual**: el seed de demo deja contratos vigentes sin fecha de
   fin, y el script aborta si encuentra más de un contrato en su período

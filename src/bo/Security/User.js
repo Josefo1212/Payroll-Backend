@@ -5,6 +5,7 @@ import { queries as sessionQueries } from "../Session/loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { passwordService } from "../../services/PasswordService.js";
 import { tokenService } from "../../services/TokenService.js";
+import { textoService } from "../../services/TextoService.js";
 
 const PERFIL_PROTEGIDO = "Superusuario";
 
@@ -37,39 +38,8 @@ const ESTADOS_CIVILES = new Set([
   "CONCUBINO",
 ]);
 
-const exigirTexto = (valor, campo, maximo) => {
-  const limpio = typeof valor === "string" ? valor.trim() : "";
-  if (!limpio) {
-    throw new ErrorNegocio(`El campo ${campo} es obligatorio.`, 400);
-  }
-  if (limpio.length > maximo) {
-    throw new ErrorNegocio(
-      `El campo ${campo} admite hasta ${maximo} caracteres.`,
-      400,
-    );
-  }
-  return limpio;
-};
-
-const opcionalTexto = (valor, campo, maximo) => {
-  if (valor === undefined || valor === null || valor === "") {
-    return null;
-  }
-  if (typeof valor !== "string") {
-    throw new ErrorNegocio(`El campo ${campo} debe ser texto.`, 400);
-  }
-  const limpio = valor.trim();
-  if (!limpio) {
-    return null;
-  }
-  if (limpio.length > maximo) {
-    throw new ErrorNegocio(
-      `El campo ${campo} admite hasta ${maximo} caracteres.`,
-      400,
-    );
-  }
-  return limpio;
-};
+const exigirTexto = textoService.requerido;
+const opcionalTexto = textoService.opcional;
 
 const validarFecha = (valor, campo, { obligatoria = false } = {}) => {
   if (valor === undefined || valor === null || valor === "") {
@@ -189,6 +159,7 @@ export class User {
       throw new ErrorNegocio("Los perfiles deben ser ids enteros positivos.", 400);
     }
 
+    let motivoSalario = null;
     if (laboral) {
       if (!laboral.cargo_id || !laboral.fecha_inicio || !laboral.tipo_pago || !laboral.frecuencia_pago || laboral.monto === undefined || laboral.monto === null) {
         throw new ErrorNegocio("Datos laborales incompletos: cargo_id, fecha_inicio, tipo_pago, frecuencia_pago y monto son obligatorios.", 400);
@@ -206,6 +177,7 @@ export class User {
       validarFecha(laboral.fecha_fin, "laboral.fecha_fin");
       validarFecha(laboral.vigente_desde, "laboral.vigente_desde");
       validarFecha(laboral.vigente_hasta, "laboral.vigente_hasta");
+      motivoSalario = opcionalTexto(laboral.motivo, "laboral.motivo", 150);
       if (laboral.horas_semanales != null) {
         const horas = Number(laboral.horas_semanales);
         if (!Number.isFinite(horas) || horas <= 0 || horas > 168) {
@@ -302,7 +274,7 @@ export class User {
             laboral.monto,
             vigenteDesde,
             laboral.vigente_hasta ?? null,
-            laboral.motivo ?? null,
+            motivoSalario,
           ]);
         }
 

@@ -1,5 +1,6 @@
 import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
+import { textoService } from "../../services/TextoService.js";
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/;
 const TIPOS_VALOR = new Set(["MONTO_FIJO", "PORCENTAJE_SALARIO"]);
@@ -60,6 +61,8 @@ export class Concept {
       }
     }
 
+    const observacionLimpia = textoService.opcional(observacion, "observacion", 200);
+
     const { rows } = await this.#db.query(queries.findConceptoById, [idConcepto]);
     const concepto = rows[0];
     if (!concepto || !concepto.activo) {
@@ -74,7 +77,7 @@ export class Concept {
         monto.toFixed(4),
         vigenteDesde,
         vigenteHasta,
-        observacion,
+        observacionLimpia,
       ]);
       return creado[0];
     } catch (error) {

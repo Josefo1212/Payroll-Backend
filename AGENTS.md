@@ -621,6 +621,15 @@ o datos desechables), y ninguna prueba depende de otra.
   útil.** Sin esa validación, un nombre de 61 caracteres o un email de 121
   llegan a PostgreSQL y el usuario recibe un `500` que no dice qué campo
   corregir.
+- **Los textos libres de `Payroll` también tienen tope.** `observacion`,
+  `descripcion`, `referencia_pago`, `nro_afiliacion` y `motivo` llegaban
+  directo a la BD; un texto largo devolvía `22001` (500). Ahora pasan por
+  `textoService.opcional`/`requerido`, que recorta y responde `400` con el
+  campo y el máximo.
+- **El selector de personas no debe traer la fila completa.** `findAllPersonas`
+  devolvía `email` y `monto_salario`, que el front no usa. Recortar la consulta
+  a los campos que la pantalla pinta reduce la PII y el salario expuestos sin
+  tocar permisos ni contratos del endpoint.
 - **`pre_nomina_e2e.mjs` no corre en el branch de desarrollo con el seed de
   demo.** Los contratos de demo no tienen fecha de fin y quedan vigentes en
   cualquier período futuro; el script aborta si hay más de un contrato en su
@@ -675,6 +684,17 @@ se agrega una nueva que la reemplaza.
   `pnpm audit --prod` reportaba un DoS en `body-parser 2.3.0` y un TypeError en
   `qs 6.16.0`, ambos transitivos de `express`. En pnpm 12 los overrides viven
   en `pnpm-workspace.yaml`, no en `package.json`.
+- **Los topes de texto viven en un solo servicio y en un solo módulo del
+  front.** `src/services/TextoService.js` (backend) y
+  `src/constants/inputLimits.ts` (front) replican los `varchar` de la BD. Un
+  campo nuevo toma su valor de ahí: el backend responde `400` con el máximo y
+  el front corta con `maxLength`, en vez de dejar que cada pantalla invente su
+  número.
+- **`listarPersonas` devuelve solo lo que la pantalla pinta.** Se quitaron
+  `email` y `monto_salario`; el selector de nómina usa nombres, cédula y cargo,
+  y la tabla de usuarios usa `username`, `usuario_activo` y el contrato.
+  Motivo: el endpoint lo consumen tres pantallas y devolver la fila completa
+  exponía PII y salario sin que nadie los mostrara.
 
 ### 2026-11-15
 

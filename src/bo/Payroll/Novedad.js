@@ -1,5 +1,6 @@
 import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
+import { textoService } from "../../services/TextoService.js";
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -45,6 +46,8 @@ export class Novedad {
       throw new ErrorNegocio("Debe indicar cantidad o monto.", 400);
     }
 
+    const observacionLimpia = textoService.opcional(observacion, "observacion", 200);
+
     const { rows: periodos } = await this.#db.query(queries.findPeriodoById, [periodoId]);
     const periodo = periodos[0];
     if (!periodo) {
@@ -67,7 +70,7 @@ export class Novedad {
       fecha,
       cantidadNum == null ? null : cantidadNum.toFixed(2),
       montoNum == null ? null : montoNum.toFixed(2),
-      observacion,
+      observacionLimpia,
       usuarioId,
     ]);
     return rows[0];

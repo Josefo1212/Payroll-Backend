@@ -1,5 +1,6 @@
 import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
+import { textoService } from "../../services/TextoService.js";
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -26,9 +27,7 @@ export class Affiliation {
       throw new ErrorNegocio("tipo_aporte_id debe ser un id entero positivo.", 400);
     }
 
-    if (typeof nroAfiliacion !== "string" || nroAfiliacion.trim() === "") {
-      throw new ErrorNegocio("nro_afiliacion es obligatorio.", 400);
-    }
+    const nroLimpio = textoService.requerido(nroAfiliacion, "nro_afiliacion", 30);
 
     this.#validarFecha(fechaInscripcion, "fecha_inscripcion");
 
@@ -41,7 +40,7 @@ export class Affiliation {
       const { rows } = await this.#db.query(queries.insertAfiliacion, [
         personaId,
         idTipo,
-        nroAfiliacion.trim(),
+        nroLimpio,
         fechaInscripcion,
       ]);
       return rows[0];

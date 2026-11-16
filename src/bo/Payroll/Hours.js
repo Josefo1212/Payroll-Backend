@@ -2,6 +2,7 @@ import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { personaIdDeSesion } from "./_scope.js";
 import { aFechaISO } from "./_fechas.js";
+import { textoService } from "../../services/TextoService.js";
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -73,6 +74,8 @@ export class Hours {
       throw new ErrorNegocio("Debe registrar al menos una hora.", 400);
     }
 
+    const observacionLimpia = textoService.opcional(observacion, "observacion", 200);
+
     await this.#exigirDiaEditable(fecha);
 
     try {
@@ -81,7 +84,7 @@ export class Hours {
         fecha,
         normales.toFixed(2),
         extra.toFixed(2),
-        observacion,
+        observacionLimpia,
         usuarioId,
       ]);
       return rows[0];
@@ -117,6 +120,8 @@ export class Hours {
       throw new ErrorNegocio("Las horas extra exceden el máximo permitido.", 400);
     }
 
+    const observacionLimpia = textoService.opcional(observacion, "observacion", 200);
+
     await this.#exigirDiaEditable(fecha);
 
     try {
@@ -124,7 +129,7 @@ export class Hours {
         personaId,
         fecha,
         extra.toFixed(2),
-        observacion,
+        observacionLimpia,
         usuarioId,
       ]);
       return rows[0];

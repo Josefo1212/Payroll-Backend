@@ -108,12 +108,11 @@ findCargoById: |
 
 findAllPersonas: |
   SELECT p.id, p.cedula, p.primer_nombre, p.segundo_nombre,
-         p.primer_apellido, p.segundo_apellido, p.email,
+         p.primer_apellido, p.segundo_apellido,
          u.id AS usuario_id, u.username, u.activo AS usuario_activo,
          c.nombre AS cargo,
          ct.id AS contrato_id, ct.tipo_pago, ct.frecuencia_pago,
-         ct.estado AS contrato_estado,
-         cs.monto AS monto_salario
+         ct.estado AS contrato_estado
   FROM persona p
   LEFT JOIN usuario u ON u.persona_id = p.id
   LEFT JOIN LATERAL (
@@ -124,13 +123,6 @@ findAllPersonas: |
     LIMIT 1
   ) ct ON true
   LEFT JOIN cargo c ON c.id = ct.cargo_id
-  LEFT JOIN LATERAL (
-    SELECT cs.monto
-    FROM contrato_salario cs
-    WHERE cs.contrato_id = ct.id
-    ORDER BY cs.vigente_desde DESC
-    LIMIT 1
-  ) cs ON true
   WHERE p.estado = 'ACTIVO'
   ORDER BY p.primer_apellido, p.primer_nombre
 

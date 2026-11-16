@@ -485,3 +485,29 @@ CORS, headers, manejo de errores y cifrado de datos sensibles.
 - **Diagrama.** `archify` refrescado con el store de sesiones, el chequeo de
   origen y los headers; `validate --quality showcase` 9/9, `deliver` y
   `visual-check` en los cuatro tamaños.
+
+## 2026-11-16 — Topes de texto y datos mínimos expuestos
+
+- **Textos libres con tope.** `src/services/TextoService.js` centraliza
+  `requerido`/`opcional` (recorte con `trim`, máximo por campo) y responde
+  `400` nombrando el campo y el máximo. Se aplica a `Hours.registrar` y
+  `registrarExtra` (`observacion` 200), `Novedad.registrar` (`observacion`
+  200), `Concept.asignarRecurrente` (`observacion` 200), `Period.crear`
+  (`descripcion` 200) y `Period.pagar` (`referencia_pago` 60),
+  `Affiliation.registrar` (`nro_afiliacion` 30) y `User.registrar`
+  (`laboral.motivo` 150). `Security/User` reutiliza el mismo servicio en vez
+  de mantener una copia.
+- **Selector de personas más angosto.** `Security/User/listarPersonas`
+  devolvía `email` y `monto_salario`; ninguna pantalla los usaba (los
+  selectores muestran nombres, cédula y cargo; la tabla de usuarios usa
+  `username`, `usuario_activo` y el contrato). Se quitaron de la consulta y
+  del tipo `PersonaItem`. Verificado contra Neon: la consulta corre y no
+  trae esas columnas.
+- **Front con `maxLength`.** `src/constants/inputLimits.ts` replica los
+  `varchar` de la BD; se aplicó en registro, login, registro público, perfil,
+  ajustes, solicitudes (incluido el textarea de revisión), departamentos,
+  conceptos, novedades, horas, extras, afiliaciones, períodos y pre-nómina
+  (`inputMode="decimal"` en monto/cantidad). `PasswordInput` ahora reenvía
+  `maxLength`.
+- **Verificación.** `pnpm test` **235/235** (7 nuevas en
+  `test/texto.test.js`) y `tsc --noEmit` limpio en el front.
