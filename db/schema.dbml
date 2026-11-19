@@ -1,10 +1,11 @@
 // ==========================================
-// SISTEMA DE NÓMINA — MODELO DE DATOS v11 (32 tablas)
+// SISTEMA DE NÓMINA — MODELO DE DATOS v12 (33 tablas)
 // Regla: tablas transaccionales -> UUID; tablas maestras -> serial (int)
 // v8: se agrega refresh_token (sesiones JWT con rotación)
 // v10: se agrega la pre-nómina (pre_nomina, pre_nomina_recibo,
 //      pre_nomina_detalle) y el enum origen_linea (migración 014)
 // v11: se agrega sesion (express-session sobre PostgreSQL, migración 015)
+// v12: se agrega despido y el enum motivo_despido (migración 018)
 //
 // Seguridad:
 //   persona > usuario > usuario_perfil < Perfil
@@ -51,6 +52,15 @@ Enum estado_contrato {
   VIGENTE
   SUSPENDIDO
   FINALIZADO
+}
+
+Enum motivo_despido {
+  RENUNCIA
+  DESPIDO_JUSTIFICADO
+  DESPIDO_INJUSTIFICADO
+  FIN_DE_CONTRATO
+  JUBILACION
+  FALLECIMIENTO
 }
 
 Enum tipo_cuenta {
@@ -395,6 +405,26 @@ Table contrato_salario {
   }
 }
 
+// Cierre laboral de un contrato. La persona queda INACTIVA y el usuario
+// desactivado en la misma transacción que escribe esta fila.
+Table despido {
+  id uuid [pk, default: `gen_random_uuid()`]
+  persona_id uuid [not null, ref: > persona.id]
+  contrato_id uuid [not null, ref: > contrato.id]
+  motivo motivo_despido [not null]
+  fecha_despido date [not null]
+  descripcion varchar(250)
+  registrado_por uuid [ref: > usuario.id]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    contrato_id [unique, name: 'uq_despido_contrato']
+    (persona_id, fecha_despido) [name: 'idx_despido_persona']
+  }
+
+  Note: 'Un contrato se cierra una sola vez: uq_despido_contrato.'
+}
+
 // ------------------------------------------
 // SEGURO SOCIAL Y APORTES DE LEY
 // ------------------------------------------
@@ -707,6 +737,7 @@ TableGroup personal {
   cargo
   contrato
   contrato_salario
+  despido
 }
 
 TableGroup ley_y_seguro_social {
