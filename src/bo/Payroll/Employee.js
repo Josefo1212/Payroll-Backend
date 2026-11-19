@@ -8,6 +8,21 @@ import { aFechaISO, esFechaISOValida } from "./_fechas.js";
 const ESTADOS = new Set(["ACTIVO", "INACTIVO", "TODOS"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// node-pg entrega DATE como Date a medianoche local; el contrato del API es
+// "YYYY-MM-DD". Se normaliza en el borde para que el front no reciba una hora.
+const normalizarFechas = (fila, campos) => {
+  if (!fila) {
+    return fila;
+  }
+  const copia = { ...fila };
+  for (const campo of campos) {
+    if (copia[campo] != null) {
+      copia[campo] = aFechaISO(copia[campo]);
+    }
+  }
+  return copia;
+};
+
 // Registro laboral: personas con su contrato y su despido. El despido es la
 // única operación que escribe, y lo hace en una transacción que deja el
 // sistema coherente (contrato, persona, usuario, tokens y sesiones).
@@ -43,7 +58,9 @@ export class Employee {
       throw new ErrorNegocio("estado debe ser ACTIVO, INACTIVO o TODOS.", 400);
     }
     const { rows } = await this.#db.query(queries.listarPersonasRegistro, [filtro]);
-    return rows;
+    return rows.map((fila) =>
+      normalizarFechas(fila, ["fecha_inicio", "fecha_fin", "fecha_despido"]),
+    );
   }
 
   async ver(personaId) {
@@ -54,15 +71,21 @@ export class Employee {
       this.#db.query(queries.findDespidosDePersona, [id]),
     ]);
     return {
-      persona,
-      contratos: contratos.rows,
-      despidos: despidos.rows,
+      persona: normalizarFechas(persona, ["fecha_nacimiento"]),
+      contratos: contratos.rows.map((fila) =>
+        normalizarFechas(fila, ["fecha_inicio", "fecha_fin"]),
+      ),
+      despidos: despidos.rows.map((fila) =>
+        normalizarFechas(fila, ["fecha_despido"]),
+      ),
     };
   }
 
   async listarDespidos() {
     const { rows } = await this.#db.query(queries.listarDespidosRegistro);
-    return rows;
+    return rows.map((fila) =>
+      normalizarFechas(fila, ["fecha_despido", "contrato_inicio", "contrato_fin"]),
+    );
   }
 
   async listarMotivos() {
@@ -174,8 +197,8 @@ export class Employee {
       }
 
       return {
-        despido: insertados[0],
-        contrato: contratoFinal[0],
+        despido: normalizarFechas(insertados[0], ["fecha_despido"]),
+        contrato: normalizarFechas(contratoFinal[0], ["fecha_fin"]),
         usuarioDesactivado: Boolean(usuario),
         sesionesCerradas,
         tokensRevocados,
