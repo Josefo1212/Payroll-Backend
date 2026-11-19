@@ -66,3 +66,43 @@ test("suma y multiplicación redondean a dos decimales", () => {
   assert.equal(calc.multiplicar("575", "0.005").toFixed(2), "2.88");
   assert.equal(calc.dividir("10", "3").toFixed(2), "3.33");
 });
+
+test("sueldo proporcional: contrato completo no se prorratea", () => {
+  const monto = calc.sueldoPeriodoProporcional("2600", "SEMANAL", {
+    inicioPeriodo: "2031-01-01",
+    finPeriodo: "2031-01-07",
+    inicioContrato: "2031-01-01",
+    finContrato: null,
+  });
+  assert.equal(monto.toFixed(2), "600.00");
+});
+
+test("sueldo proporcional: despido a mitad de período paga los días trabajados", () => {
+  // Semana de 7 días, contrato hasta el día 4 → 4/7 del sueldo semanal.
+  const monto = calc.sueldoPeriodoProporcional("2600", "SEMANAL", {
+    inicioPeriodo: "2031-01-01",
+    finPeriodo: "2031-01-07",
+    inicioContrato: "2030-06-01",
+    finContrato: "2031-01-04",
+  });
+  assert.equal(monto.toFixed(2), "342.86");
+});
+
+test("sueldo proporcional: alta a mitad de período paga desde el inicio", () => {
+  // Días 5, 6 y 7 de una semana de 7 → 3/7.
+  const monto = calc.sueldoPeriodoProporcional("2600", "SEMANAL", {
+    inicioPeriodo: "2031-01-01",
+    finPeriodo: "2031-01-07",
+    inicioContrato: "2031-01-05",
+    finContrato: null,
+  });
+  assert.equal(monto.toFixed(2), "257.14");
+});
+
+test("sueldo proporcional: sin fechas de contrato devuelve el período completo", () => {
+  const monto = calc.sueldoPeriodoProporcional("1200", "MENSUAL", {
+    inicioPeriodo: "2031-01-01",
+    finPeriodo: "2031-01-31",
+  });
+  assert.equal(monto.toFixed(2), "1200.00");
+});
