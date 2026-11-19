@@ -51,7 +51,7 @@
           "services",
           "db"
         ],
-        "note": "Nueve BO de nómina; PayrollWriter comparte el cálculo entre el borrador y el recibo final."
+        "note": "Diez BO de nómina; PayrollWriter comparte el cálculo entre el borrador y el recibo final."
       },
       {
         "id": "pre-nomina",
@@ -117,7 +117,7 @@
       "type": "backend",
       "label": "Objetos de negocio",
       "sublabel": "Session · Security · Payroll",
-      "tag": "Session·Token │ Menu·Admin·User │ Payroll ×9",
+      "tag": "Session·Token │ Menu·Admin·User │ Payroll ×10",
       "pos": [
         710,
         220
@@ -163,7 +163,7 @@
       "label": "PostgreSQL · Neon",
       "sublabel": "pool máx 10",
       "brand": "postgresql",
-      "tag": "32 tablas · sesion · pre_nomina*",
+      "tag": "33 tablas · sesion · pre_nomina* · despido",
       "pos": [
         1170,
         220
@@ -403,7 +403,7 @@
       "title": "Servicios y nómina",
       "items": [
         "PayrollWriter comparte cálculo y escritura",
-        "Payroll/PreNomina: generar → guardar → confirmar",
+        "Payroll/Employee: despido transaccional",
         "PayrollCalculator con decimal.js"
       ]
     }
