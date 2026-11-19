@@ -1,6 +1,7 @@
 import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
-import { personaIdDeSesion } from "./_scope.js";
+import { esGestorNomina, personaIdDeSesion } from "./_scope.js";
+import { reciboPdfService } from "../../services/ReciboPdfService.js";
 
 export class Receipt {
   #db;
@@ -59,5 +60,31 @@ export class Receipt {
       recibo.id,
     ]);
     return { recibo, detalle };
+  }
+
+  // El PDF se genera en memoria y viaja por /execute: el cliente no necesita
+  // otra ruta ni otro permiso. El gestor descarga cualquiera; el empleado solo
+  // el propio, y esa pertenencia se valida acá, no en el mapa de permisos.
+  async generarPdf(reciboId) {
+    const recibo = await this.#exigirRecibo(reciboId);
+
+    if (!esGestorNomina(this.#req)) {
+      const personaId = await personaIdDeSesion(this.#db, this.#req);
+      if (recibo.persona_id !== personaId) {
+        throw new ErrorNegocio("No autorizado para ver este recibo.", 403);
+      }
+    }
+
+    const { rows: detalle } = await this.#db.query(queries.findDetallePorRecibo, [
+      recibo.id,
+    ]);
+    const contenido = await reciboPdfService.generar(recibo, detalle);
+
+    return {
+      nombreArchivo: reciboPdfService.nombreArchivo(recibo),
+      mimeType: "application/pdf",
+      tamanioBytes: contenido.length,
+      contenidoBase64: contenido.toString("base64"),
+    };
   }
 }
