@@ -387,6 +387,60 @@ listarPeriodos: |
   LEFT JOIN pre_nomina pn ON pn.periodo_nomina_id = p.id
   ORDER BY p.fecha_inicio DESC
 
+resumenPeriodo: |
+  SELECT p.id, p.fecha_inicio, p.fecha_fin, p.frecuencia, p.estado,
+         p.descripcion, p.procesado_por, p.fecha_proceso, p.created_at,
+         pn.id AS pre_nomina_id, pn.version AS pre_nomina_version,
+         COUNT(r.id) FILTER (WHERE r.estado <> 'ANULADO') AS personas,
+         COALESCE(SUM(r.total_asignaciones) FILTER (WHERE r.estado <> 'ANULADO'), 0) AS total_asignaciones,
+         COALESCE(SUM(r.total_deducciones) FILTER (WHERE r.estado <> 'ANULADO'), 0) AS total_deducciones,
+         COALESCE(SUM(r.monto_total) FILTER (WHERE r.estado <> 'ANULADO'), 0) AS total_neto
+  FROM periodo_nomina p
+  LEFT JOIN pre_nomina pn ON pn.periodo_nomina_id = p.id
+  LEFT JOIN recibo_pago r ON r.periodo_nomina_id = p.id
+  WHERE p.id = $1
+  GROUP BY p.id, pn.id
+
+resumenPorConcepto: |
+  SELECT co.codigo, co.nombre_concepto, co.tipo_concepto, co.categoria,
+         COUNT(*)::int AS lineas,
+         COALESCE(SUM(d.monto), 0) AS total
+  FROM detalle_recibo d
+  JOIN concepto co ON co.id = d.concepto_id
+  JOIN recibo_pago r ON r.id = d.recibo_pago_id
+  WHERE r.periodo_nomina_id = $1
+    AND r.estado <> 'ANULADO'
+  GROUP BY co.codigo, co.nombre_concepto, co.tipo_concepto, co.categoria
+  ORDER BY CASE co.tipo_concepto
+             WHEN 'ASIGNACION' THEN 1
+             WHEN 'DEDUCCION' THEN 2
+             WHEN 'APORTE_PATRONAL' THEN 3
+             ELSE 4
+           END,
+           co.codigo
+
+listarPeriodosConTotales: |
+  SELECT p.id, p.fecha_inicio, p.fecha_fin, p.frecuencia, p.estado,
+         p.descripcion, p.procesado_por, p.fecha_proceso, p.created_at,
+         pn.id AS pre_nomina_id, pn.version AS pre_nomina_version,
+         COUNT(r.id) FILTER (WHERE r.estado <> 'ANULADO') AS personas,
+         COALESCE(SUM(r.total_asignaciones) FILTER (WHERE r.estado <> 'ANULADO'), 0) AS total_asignaciones,
+         COALESCE(SUM(r.total_deducciones) FILTER (WHERE r.estado <> 'ANULADO'), 0) AS total_deducciones,
+         COALESCE(SUM(r.monto_total) FILTER (WHERE r.estado <> 'ANULADO'), 0) AS total_neto,
+         COALESCE(SUM(pat.total), 0) AS total_aporte_patronal
+  FROM periodo_nomina p
+  LEFT JOIN pre_nomina pn ON pn.periodo_nomina_id = p.id
+  LEFT JOIN recibo_pago r ON r.periodo_nomina_id = p.id
+  LEFT JOIN LATERAL (
+    SELECT SUM(d.monto) AS total
+    FROM detalle_recibo d
+    JOIN concepto co ON co.id = d.concepto_id
+    WHERE d.recibo_pago_id = r.id
+      AND co.tipo_concepto = 'APORTE_PATRONAL'
+  ) pat ON true
+  GROUP BY p.id, pn.id
+  ORDER BY p.fecha_inicio DESC
+
 updatePeriodoEstado: |
   UPDATE periodo_nomina
      SET estado = $2,
