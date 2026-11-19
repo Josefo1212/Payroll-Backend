@@ -531,3 +531,47 @@ CORS, headers, manejo de errores y cifrado de datos sensibles.
   RESUMEN E2E OK** contra el período procesado más reciente de Neon (compara
   con la suma directa en SQL y con el desglose por concepto). Sin cambio de
   esquema ni de topología, por lo que no se refresca `archify`.
+
+## 2026-11-19 — PDF del recibo (spec 014)
+
+- **El PDF se arma en el servidor con `pdfkit`.** `Payroll/Receipt` suma
+  `generarPdf(reciboId)`; `src/services/ReciboPdfService.js` compone el
+  documento (encabezado, período, líneas, neto y pie) y el BO devuelve
+  `{ nombreArchivo, mimeType, tamanioBytes, contenidoBase64 }`. El front lo
+  descarga desde el base64; no hay ruta de archivos aparte.
+- **La pertenencia se valida en el BO.** El permiso `generarPdf` se concede a
+  `RRHH`, `GerenteRRHH`, `Administrador`, `Superusuario` y `Empleado`; los
+  gestores (`esGestorNomina`) ven cualquier recibo y el empleado solo el suyo
+  (`403` si no coincide `persona_id`). El mapa de permisos es por perfil, no
+  por fila.
+- **Migración `017_pdf_recibo.sql`** (solo datos): siembra el método y sus
+  permisos. Sin cambio de esquema ni de topología.
+- **Verificación.** `pnpm test` **256/256** (6 nuevas en
+  `test/reciboPdf.test.js`) y `scripts/manual/pdf_recibo_e2e.mjs` **20/20 →
+  PDF RECIBO E2E OK** (empleado propio, ajeno `403`, RRHH y Superusuario,
+  recibo inexistente y sin sesión).
+
+## 2026-11-19 — Registro de personas y despidos (spec 015)
+
+- **Nuevo BO `Payroll/Employee`.** `listar(estado)`, `ver(personaId)`,
+  `despedir(personaId, motivo, fecha, descripcion)`, `listarDespidos()` y
+  `listarMotivos()`. El motivo se lee del enum `motivo_despido` con
+  `pg_enum`, no está escrito a mano en el front.
+- **El despido es transaccional.** Orden fijo persona → contrato; después
+  inserta `despido`, finaliza el contrato, inactiva la persona, desactiva el
+  usuario, revoca sus refresh tokens y borra sus sesiones
+  (`sess->>'userID'`). `UNIQUE (contrato_id)` impide un segundo despido
+  (`409`).
+- **La nómina incluye al despedido del período.** `findContratosVigentesPorFrecuencia`
+  acepta `FINALIZADO` con `fecha_fin BETWEEN inicio AND fin` y dejó de exigir
+  `persona.estado = 'ACTIVO'`. `sueldoPeriodoProporcional` paga solo los días
+  trabajados del contrato dentro del período.
+- **Migración `018_despidos.sql`**: enum `motivo_despido`, tabla `despido`,
+  clase `Employee`, cinco métodos y opciones `Personas` (11) y `Despidos`
+  (12), solo para `RRHH` y `Superusuario`. `db/schema.dbml` v12 (33 tablas).
+- **Verificación.** `pnpm test` **271/271** (11 nuevas en
+  `test/employee.test.js` y 4 del prorrateo) y
+  `scripts/manual/despidos_e2e.mjs` **45/45 → DESPIDOS E2E OK**: alta de una
+  persona de prueba, despido, verificación en BD, inclusión en la nómina,
+  prorrateo, `403` de Empleado y Administrador, y limpieza total en
+  `finally`. Diagrama `archify` refrescado (9/9 checks, visual-check OK).

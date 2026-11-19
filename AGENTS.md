@@ -64,7 +64,7 @@ con UUID). Las consultas viven en `queries.yaml`; el seed de seguridad está
 aplicado (`db/seed-seguridad.sql`); `src/security/Security.js` (mapas y
 `executeMethod`) y los BO de `src/bo/Session/` (`Session.js`) y `src/bo/Security/` (`Menu.js`, `Admin.js`, `User.js`) existen; el login usa
 `bcrypt` con bloqueo por intentos y la sesión guarda los perfiles N:M.
-`db/schema.dbml` (v10, 31 tablas) está escrito, en snake_case minúscula, y
+`db/schema.dbml` (v12, 33 tablas) está escrito, en snake_case minúscula, y
 espeja `db/init.sql` **más las migraciones aplicadas** (mismas tablas y
 columnas; `init.sql` sigue en v8 con 27 tablas).
 La sesión se separó a su propio subsistema.
@@ -207,9 +207,33 @@ de `recibo_pago`) y se reporta aparte del neto. Migración
 `scripts/manual/resumen_e2e.mjs` 17/17 → `RESUMEN E2E OK`. Sin cambio de
 esquema ni de topología.
 
+**Spec 014 (PDF del recibo) implementada (2026-11-19):** `Payroll/Receipt`
+suma `generarPdf(reciboId)`, que arma el PDF en el servidor con `pdfkit`
+(`src/services/ReciboPdfService.js`) y devuelve
+`{ nombreArchivo, mimeType, tamanioBytes, contenidoBase64 }` por `/execute`.
+Los gestores (`RRHH`, `GerenteRRHH`, `Administrador`, `Superusuario`)
+descargan cualquier recibo; `Empleado` solo el suyo, y esa pertenencia se
+valida en el BO (`403`), no en el mapa de permisos. Migración
+`017_pdf_recibo.sql` siembra el método para los cinco perfiles. `pnpm test`
+256/256 y `scripts/manual/pdf_recibo_e2e.mjs` 20/20 → `PDF RECIBO E2E OK`.
+Sin cambio de esquema.
+
+**Spec 015 (registro de personas y despidos) implementada (2026-11-19):**
+nuevo BO `Payroll/Employee` con `listar`, `ver`, `despedir`, `listarDespidos`
+y `listarMotivos`; tabla `despido` y enum `motivo_despido` en la migración
+`018_despidos.sql`; opciones de menú `Personas` (11) y `Despidos` (12) solo
+para `RRHH` y `Superusuario`. `despedir` corre en una transacción: inserta el
+despido, finaliza el contrato, inactiva la persona, desactiva el usuario,
+revoca sus refresh tokens y borra sus sesiones. `findContratosVigentesPorFrecuencia`
+ahora incluye contratos `FINALIZADO` con `fecha_fin` dentro del período, y
+`PayrollCalculator.sueldoPeriodoProporcional` prorratea el sueldo fijo por
+días trabajados. `db/schema.dbml` v12 (33 tablas). `pnpm test` 271/271 y
+`scripts/manual/despidos_e2e.mjs` 45/45 → `DESPIDOS E2E OK`.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), la pantalla
-`/payroll/pre-nomina` (contrato en `PROMPT-FRONT.md`, repo del front), y
-migrar las consultas de `queries.yaml` a los BO.
+`/payroll/pre-nomina` y los contratos de resumen, PDF y despidos (el documento
+`PROMPT-FRONT-NOMINA.md` del repo del front), y migrar las consultas de
+`queries.yaml` a los BO.
 
 El detalle histórico por fase vive en `docs/bitacora.md`.
 
@@ -369,8 +393,8 @@ gana la práctica.
 El modelo objetivo es la **v8 (27 tablas)**, consolidado en `db/init.sql`
 (un solo archivo en snake_case minúscula). Las migraciones agregan tablas
 (`registro_horas` en la 004; `pre_nomina`, `pre_nomina_recibo` y
-`pre_nomina_detalle` en la 014) y `db/schema.dbml` refleja el estado final
-(v10, 31 tablas).
+`pre_nomina_detalle` en la 014; `despido` en la 018) y `db/schema.dbml`
+refleja el estado final (v12, 33 tablas).
 Las tablas transaccionales y `persona`/`usuario`/`refresh_token` usan `uuid`;
 las maestras (`perfil`, `subsistema`, `opcion`, `clase`, `metodo`, `concepto`,
 `banco`, `cargo`, `tipo_aporte_ley`, `parametro_aporte_ley`) usan `serial`.
@@ -380,7 +404,7 @@ las maestras (`perfil`, `subsistema`, `opcion`, `clase`, `metodo`, `concepto`,
 | Seguridad: identidad | usuario, perfil, usuario_perfil, refresh_token |
 | Seguridad: estructura | subsistema, opcion, clase, metodo |
 | Seguridad: permisos | permiso_opcion, permiso_metodo |
-| Personal | persona, cuenta_bancaria, banco, cargo, contrato, contrato_salario |
+| Personal | persona, cuenta_bancaria, banco, cargo, contrato, contrato_salario, despido |
 | Ley y seguro social | tipo_aporte_ley, parametro_aporte_ley, afiliacion_ley |
 | Nómina | concepto, concepto_persona, novedad, registro_horas, periodo_nomina, recibo_pago, detalle_recibo |
 | Pre-nómina | pre_nomina, pre_nomina_recibo, pre_nomina_detalle |
@@ -656,6 +680,32 @@ o datos desechables), y ninguna prueba depende de otra.
   Si el lateral se apoya en una columna no agrupada, PostgreSQL responde
   `42803`; y un `SUM` sobre `recibo_pago` sin filtrar `ANULADO` infla los
   totales.
+- **`node-pg` entrega `DATE` como `Date`, no como texto.** Al serializar a
+  JSON, `fecha_fin` sale como `"2026-11-19T04:00:00.000Z"` y el contrato del
+  API promete `"2026-11-19"`. `Employee` normaliza sus fechas con `aFechaISO`
+  en el borde; no se cambió el parser global de `pg` porque afectaría a todos
+  los BO.
+- **`pdfkit` no debe escribir por debajo de `page.maxY()`.** Un pie dibujado
+  fuera del área de texto (incluido dentro de un handler `pageAdded`) dispara
+  `continueOnNewPage` y entra en recursión infinita. El pie va dentro del
+  margen inferior (`page.height - margins.bottom - 22`).
+- **`despedir` debe incluir el contrato `FINALIZADO` del período en la
+  nómina.** `findContratosVigentesPorFrecuencia` filtraba `estado = 'VIGENTE'`
+  y `persona.estado = 'ACTIVO'`; una persona despedida a mitad de período
+  desaparecía. Ahora incluye `FINALIZADO` con `fecha_fin BETWEEN $1 AND $2` y
+  el prorrateo se hace por días.
+- **La sesión se borra por `sess->>'userID'`, no por el sid.** El valor de
+  `connect.sid` viaja firmado (`s:<sid>.<firma>`); la tabla `sesion` guarda el
+  sid sin firma y el JSON con el `userID`. Para cerrar las sesiones de un
+  usuario despedido se filtra por `sess->>'userID'`.
+- **Un despido es una transacción de cinco tablas.** Orden fijo persona →
+  contrato para no interbloquear; después `despido`, `persona`, `usuario`,
+  `refresh_token` y `sesion`. Si algo falla, el `ROLLBACK` deja todo como
+  estaba (la persona no queda a medias entre activa y despedida).
+- **El E2E de despidos crea usuarios desechables y los borra en `finally`.**
+  No procesa períodos: verificar la inclusión en la nómina con la consulta
+  del período y el prorrateo con el calculador evita tocar los recibos y las
+  cuotas de la demo. `despido` se borra antes que `contrato` por la FK.
 
 ## Decisiones de diseño
 
@@ -678,6 +728,33 @@ se agrega una nueva que la reemplaza.
   `GerenteRRHH`, `Administrador` y `Superusuario`; `Empleado` no ve totales
   de la nómina completa. No hay opción de menú nueva: el resumen vive dentro
   de la pantalla de períodos.
+- **El PDF del recibo se genera en el servidor y viaja en base64.** `pdfkit`
+  arma el documento en memoria y `generarPdf` devuelve
+  `{ nombreArchivo, mimeType, tamanioBytes, contenidoBase64 }`. Motivo: el
+  cliente no tiene que replicar el formato ni exponer un endpoint de archivos
+  con otra autenticación; el sobre de `/execute` ya valida sesión y permiso.
+- **La pertenencia del recibo se valida en el BO, no en el mapa de
+  permisos.** El permiso `generarPdf` es el mismo para gestores y `Empleado`;
+  `esGestorNomina` decide si puede ver cualquiera y, si no, se compara
+  `recibo.persona_id` con la persona de la sesión (`403`). Motivo: el mapa es
+  por perfil y no por fila; un permiso por recibo obligaría a un mapa
+  dinámico.
+- **El despido es una operación de negocio, no un `DELETE`.** `despido`
+  guarda el motivo y la fecha; el contrato pasa a `FINALIZADO`, la persona a
+  `INACTIVO` y el usuario a `activo = false`. Motivo: el histórico laboral y
+  la nómina necesitan las filas; borrar dejaría recibos huérfanos y rompería
+  las FKs.
+- **Un contrato se cierra una sola vez (`UNIQUE (contrato_id)`).** El
+  segundo intento responde `409` antes de tocar nada. Motivo: dos despidos
+  del mismo contrato harían ambiguo el motivo y la fecha de la baja.
+- **La nómina del período incluye al despedido y prorratea el sueldo fijo.**
+  `findContratosVigentesPorFrecuencia` acepta `FINALIZADO` con `fecha_fin`
+  dentro del período; `sueldoPeriodoProporcional` paga solo los días
+  trabajados. Motivo: la persona trabajó hasta su fecha de egreso; sacarla
+  del período le quitaría el sueldo ya devengado.
+- **`Employee` normaliza las fechas DATE a `YYYY-MM-DD` en el borde.** No se
+  cambió el parser global de `pg`: otros BO ya consumen `Date` y un cambio
+  global alteraría sus contratos sin aviso.
 
 ### 2026-11-16
 
