@@ -1,9 +1,14 @@
+import Decimal from "decimal.js";
 import { queries } from "./loader.js";
 import { ErrorNegocio } from "../../errors/ErrorNegocio.js";
 import { PayrollWriter } from "./PayrollWriter.js";
 import { textoService } from "../../services/TextoService.js";
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/;
+
+// Los DECIMAL llegan como texto desde node-pg. Se normalizan siempre con dos
+// decimales para que el front no tenga que adivinar el formato.
+const monto = (valor) => new Decimal(valor ?? 0).toFixed(2);
 const FRECUENCIAS = new Set(["SEMANAL", "QUINCENAL", "MENSUAL"]);
 const METODOS_PAGO = new Set(["TRANSFERENCIA", "PAGO_MOVIL", "EFECTIVO", "CHEQUE"]);
 
@@ -240,5 +245,66 @@ export class Period {
       ? { id: periodo.pre_nomina_id, version: periodo.pre_nomina_version }
       : null;
     return { periodo, recibos, preNomina };
+  }
+
+  // Totales de un período ya generado. El aporte patronal se calcula desde
+  // detalle_recibo porque no es una columna de recibo_pago y NO forma parte
+  // del neto: se reporta aparte y solo suma al costo total.
+  async resumen(periodoId) {
+    const periodo = await this.#exigirPeriodo(periodoId);
+    const [cabecera, conceptos] = await Promise.all([
+      this.#db.query(queries.resumenPeriodo, [periodo.id]),
+      this.#db.query(queries.resumenPorConcepto, [periodo.id]),
+    ]);
+
+    const fila = cabecera.rows[0] ?? {};
+    const porConcepto = conceptos.rows.map((linea) => ({
+      ...linea,
+      lineas: Number(linea.lineas ?? 0),
+      total: monto(linea.total),
+    }));
+
+    const aportePatronal = porConcepto
+      .filter((linea) => linea.tipo_concepto === "APORTE_PATRONAL")
+      .reduce((total, linea) => total.plus(linea.total), new Decimal(0));
+    const asignaciones = new Decimal(fila.total_asignaciones ?? 0);
+
+    return {
+      periodo: {
+        ...periodo,
+        preNominaId: periodo.pre_nomina_id ?? null,
+        preNominaVersion: periodo.pre_nomina_version ?? null,
+      },
+      totales: {
+        personas: Number(fila.personas ?? 0),
+        total_asignaciones: monto(asignaciones),
+        total_deducciones: monto(fila.total_deducciones),
+        total_neto: monto(fila.total_neto),
+        total_aporte_patronal: monto(aportePatronal),
+        costo_total: monto(asignaciones.plus(aportePatronal)),
+      },
+      por_concepto: porConcepto,
+    };
+  }
+
+  // Histórico: todos los períodos con sus totales. Un período sin recibos
+  // devuelve personas 0 y montos "0.00", no null.
+  async listarConTotales() {
+    const { rows } = await this.#db.query(queries.listarPeriodosConTotales);
+    return rows.map((fila) => {
+      const asignaciones = new Decimal(fila.total_asignaciones ?? 0);
+      const aportePatronal = new Decimal(fila.total_aporte_patronal ?? 0);
+      return {
+        ...fila,
+        personas: Number(fila.personas ?? 0),
+        total_asignaciones: monto(asignaciones),
+        total_deducciones: monto(fila.total_deducciones),
+        total_neto: monto(fila.total_neto),
+        total_aporte_patronal: monto(aportePatronal),
+        costo_total: monto(asignaciones.plus(aportePatronal)),
+        preNominaId: fila.pre_nomina_id ?? null,
+        preNominaVersion: fila.pre_nomina_version ?? null,
+      };
+    });
   }
 }
