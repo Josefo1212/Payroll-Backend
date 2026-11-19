@@ -44,6 +44,12 @@ revokeAllUserTokens: |
    WHERE usuario_id = $1
      AND revocado_en IS NULL
 
+# Al despedir una persona hay que cerrarle la sesión viva: el JSON de
+# express-session guarda el userID, no el sid de la cookie.
+borrarSesionesDeUsuario: |
+  DELETE FROM sesion
+   WHERE sess->>'userID' = $1
+
 findRefreshTokenByHash: |
   SELECT id, usuario_id, familia_id, expira_en, revocado_en, reemplazado_por
   FROM refresh_token

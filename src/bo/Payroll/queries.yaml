@@ -465,11 +465,15 @@ findContratosVigentesPorFrecuencia: |
     ORDER BY cs.vigente_desde DESC
     LIMIT 1
   ) cs ON true
-  WHERE c.estado = 'VIGENTE'
-    AND c.frecuencia_pago = $3
+  WHERE c.frecuencia_pago = $3
     AND c.fecha_inicio <= $2
     AND (c.fecha_fin IS NULL OR c.fecha_fin >= $1)
-    AND p.estado = 'ACTIVO'
+    AND (
+      c.estado = 'VIGENTE'
+      -- Un despido a mitad de período cierra el contrato con fecha_fin dentro
+      -- del período: esa persona todavía se paga en esta nómina.
+      OR (c.estado = 'FINALIZADO' AND c.fecha_fin BETWEEN $1 AND $2)
+    )
   ORDER BY p.primer_apellido, p.primer_nombre
 
 findAfiliacionesVigentesPorPersona: |
@@ -860,3 +864,133 @@ marcarNovedadAplicadaPorId: |
    WHERE id = $1
      AND estado = 'APROBADA'
   RETURNING id
+
+# ---------------------------------------------------------------------------
+# Registro de personas y despidos (Employee)
+# ---------------------------------------------------------------------------
+listarPersonasRegistro: |
+  SELECT p.id, p.cedula, p.primer_nombre, p.segundo_nombre, p.primer_apellido,
+         p.segundo_apellido, p.email, p.nro_tlf, p.estado,
+         u.id AS usuario_id, u.username, u.activo AS usuario_activo,
+         c.id AS contrato_id, c.estado AS contrato_estado, c.fecha_inicio,
+         c.fecha_fin, c.tipo_pago, c.frecuencia_pago,
+         ca.nombre AS cargo,
+         d.id AS despido_id, d.motivo AS despido_motivo, d.fecha_despido
+  FROM persona p
+  LEFT JOIN usuario u ON u.persona_id = p.id
+  LEFT JOIN LATERAL (
+    SELECT c.id, c.estado, c.fecha_inicio, c.fecha_fin, c.tipo_pago,
+           c.frecuencia_pago, c.cargo_id
+    FROM contrato c
+    WHERE c.persona_id = p.id
+    ORDER BY (c.estado = 'VIGENTE') DESC, c.fecha_inicio DESC
+    LIMIT 1
+  ) c ON true
+  LEFT JOIN cargo ca ON ca.id = c.cargo_id
+  LEFT JOIN LATERAL (
+    SELECT d.id, d.motivo, d.fecha_despido
+    FROM despido d
+    WHERE d.persona_id = p.id
+    ORDER BY d.fecha_despido DESC
+    LIMIT 1
+  ) d ON true
+  WHERE $1 = 'TODOS' OR p.estado::text = $1
+  ORDER BY p.primer_apellido, p.primer_nombre
+
+findPersonaRegistro: |
+  SELECT p.id, p.cedula, p.primer_nombre, p.segundo_nombre, p.primer_apellido,
+         p.segundo_apellido, p.fecha_nacimiento, p.sexo, p.estado_civil,
+         p.nro_tlf, p.email, p.direccion, p.estado, p.created_at, p.updated_at,
+         u.id AS usuario_id, u.username, u.activo AS usuario_activo,
+         u.debe_cambiar_clave, u.ultimo_acceso
+  FROM persona p
+  LEFT JOIN usuario u ON u.persona_id = p.id
+  WHERE p.id = $1
+
+findContratosDePersona: |
+  SELECT c.id, c.cargo_id, ca.nombre AS cargo, c.fecha_inicio, c.fecha_fin,
+         c.tipo_pago, c.frecuencia_pago, c.horas_semanales, c.estado,
+         c.created_at
+  FROM contrato c
+  LEFT JOIN cargo ca ON ca.id = c.cargo_id
+  WHERE c.persona_id = $1
+  ORDER BY c.fecha_inicio DESC
+
+findDespidosDePersona: |
+  SELECT d.id, d.contrato_id, d.motivo, d.fecha_despido, d.descripcion,
+         d.registrado_por, d.created_at,
+         u.username AS registrado_por_username
+  FROM despido d
+  LEFT JOIN usuario u ON u.id = d.registrado_por
+  WHERE d.persona_id = $1
+  ORDER BY d.fecha_despido DESC
+
+findPersonaForUpdate: |
+  SELECT id, cedula, primer_nombre, primer_apellido, estado
+  FROM persona
+  WHERE id = $1
+  FOR UPDATE
+
+findContratoVigenteForUpdate: |
+  SELECT id, persona_id, fecha_inicio, fecha_fin, estado
+  FROM contrato
+  WHERE persona_id = $1
+    AND estado = 'VIGENTE'
+  ORDER BY fecha_inicio DESC
+  LIMIT 1
+  FOR UPDATE
+
+findDespidoPorContrato: |
+  SELECT id, fecha_despido, motivo
+  FROM despido
+  WHERE contrato_id = $1
+
+insertDespido: |
+  INSERT INTO despido
+    (persona_id, contrato_id, motivo, fecha_despido, descripcion, registrado_por)
+  VALUES ($1, $2, $3::motivo_despido, $4, $5, $6)
+  RETURNING id, persona_id, contrato_id, motivo, fecha_despido, descripcion,
+            registrado_por, created_at
+
+finalizarContrato: |
+  UPDATE contrato
+     SET estado = 'FINALIZADO',
+         fecha_fin = $2
+   WHERE id = $1
+  RETURNING id, estado, fecha_fin
+
+inactivarPersona: |
+  UPDATE persona
+     SET estado = 'INACTIVO',
+         updated_at = NOW()
+   WHERE id = $1
+  RETURNING id, estado
+
+desactivarUsuarioDePersona: |
+  UPDATE usuario
+     SET activo = false,
+         updated_at = NOW()
+   WHERE persona_id = $1
+  RETURNING id
+
+listarDespidosRegistro: |
+  SELECT d.id, d.persona_id, d.contrato_id, d.motivo, d.fecha_despido,
+         d.descripcion, d.created_at,
+         p.cedula, p.primer_nombre, p.segundo_nombre, p.primer_apellido,
+         p.segundo_apellido,
+         c.fecha_inicio AS contrato_inicio, c.fecha_fin AS contrato_fin,
+         ca.nombre AS cargo,
+         u.username AS registrado_por_username
+  FROM despido d
+  JOIN persona p ON p.id = d.persona_id
+  JOIN contrato c ON c.id = d.contrato_id
+  LEFT JOIN cargo ca ON ca.id = c.cargo_id
+  LEFT JOIN usuario u ON u.id = d.registrado_por
+  ORDER BY d.fecha_despido DESC, p.primer_apellido, p.primer_nombre
+
+listarMotivosDespido: |
+  SELECT e.enumlabel AS motivo
+  FROM pg_enum e
+  JOIN pg_type t ON t.oid = e.enumtypid
+  WHERE t.typname = 'motivo_despido'
+  ORDER BY e.enumsortorder
