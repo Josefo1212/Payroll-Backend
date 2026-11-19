@@ -44,6 +44,45 @@ class PayrollCalculator {
   sueldoPeriodo = (salarioMensual, frecuencia) =>
     this.redondear(this.aDecimal(salarioMensual).times(this.factorFrecuencia(frecuencia)));
 
+  // Días inclusivos entre dos fechas ISO (YYYY-MM-DD). Se usa UTC para que
+  // el horario de verano o el offset local no muevan el conteo.
+  diasInclusivos = (desde, hasta) => {
+    const aMs = (fecha) => {
+      const [anio, mes, dia] = fecha.split("-").map(Number);
+      return Date.UTC(anio, mes - 1, dia);
+    };
+    return Math.round((aMs(hasta) - aMs(desde)) / 86400000) + 1;
+  };
+
+  // Sueldo del período para un contrato que no lo cubre completo (alta o
+  // despido a mitad de período). Si cubre todo el período, devuelve el monto
+  // normal sin pasar por el prorrateo, para no arrastrar redondeos.
+  sueldoPeriodoProporcional = (
+    salarioMensual,
+    frecuencia,
+    { inicioPeriodo, finPeriodo, inicioContrato, finContrato } = {},
+  ) => {
+    const completo = this.sueldoPeriodo(salarioMensual, frecuencia);
+    if (!inicioPeriodo || !finPeriodo || !inicioContrato) {
+      return completo;
+    }
+
+    const desde = inicioContrato > inicioPeriodo ? inicioContrato : inicioPeriodo;
+    const hasta = finContrato && finContrato < finPeriodo ? finContrato : finPeriodo;
+
+    if (desde <= inicioPeriodo && hasta >= finPeriodo) {
+      return completo;
+    }
+
+    const diasPeriodo = this.diasInclusivos(inicioPeriodo, finPeriodo);
+    const diasTrabajados = this.diasInclusivos(desde, hasta);
+    if (diasPeriodo <= 0 || diasTrabajados <= 0) {
+      return new Decimal(0);
+    }
+
+    return this.redondear(completo.times(diasTrabajados).dividedBy(diasPeriodo));
+  };
+
   armarCuotas = (montoTotal, tasaInteres, nroCuotas) => {
     const n = Number(nroCuotas);
     if (!Number.isInteger(n) || n <= 0) {

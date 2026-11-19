@@ -88,7 +88,12 @@ export class PayrollWriter {
 
     const sueldoBase = esPorHora
       ? calc.redondear(valorHora.times(horasNormales))
-      : calc.sueldoPeriodo(montoSalario, contrato.frecuencia_pago);
+      : calc.sueldoPeriodoProporcional(montoSalario, contrato.frecuencia_pago, {
+          inicioPeriodo: inicio,
+          finPeriodo: fin,
+          inicioContrato: aFechaISO(contrato.fecha_inicio),
+          finContrato: aFechaISO(contrato.fecha_fin),
+        });
 
     agregar({
       origen: "CALCULADA",
