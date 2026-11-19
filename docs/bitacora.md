@@ -511,3 +511,23 @@ CORS, headers, manejo de errores y cifrado de datos sensibles.
   `maxLength`.
 - **Verificación.** `pnpm test` **235/235** (7 nuevas en
   `test/texto.test.js`) y `tsc --noEmit` limpio en el front.
+
+## 2026-11-19 — Resumen de nómina (spec 013)
+
+- **Dos métodos de solo lectura en `Payroll/Period`.** `resumen(periodoId)`
+  devuelve los totales del período (personas, asignaciones, deducciones,
+  neto, aporte patronal y costo total) y el desglose por concepto;
+  `listarConTotales()` devuelve el histórico con los mismos totales. No hay
+  tabla de totales: se suman `recibo_pago` y `detalle_recibo` al vuelo.
+- **El aporte patronal no es columna de `recibo_pago`.** Se suma desde
+  `detalle_recibo` (`tipo_concepto = 'APORTE_PATRONAL'`) y se reporta aparte;
+  `costo_total = asignaciones + aporte_patronal`, nunca dentro del neto.
+- **Migración `016_resumen_nomina.sql`** (solo datos): siembra `resumen` y
+  `listarConTotales` y los concede a `RRHH`, `GerenteRRHH`, `Administrador` y
+  `Superusuario`. Sin opción de menú nueva: el resumen se ve dentro de la
+  pantalla de períodos.
+- **Verificación.** `pnpm test` **250/250** (4 nuevas en
+  `test/resumenNomina.test.js`) y `scripts/manual/resumen_e2e.mjs` **17/17 →
+  RESUMEN E2E OK** contra el período procesado más reciente de Neon (compara
+  con la suma directa en SQL y con el desglose por concepto). Sin cambio de
+  esquema ni de topología, por lo que no se refresca `archify`.

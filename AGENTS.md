@@ -196,6 +196,17 @@ valida largos, formatos, fechas, enums y monto antes de la transacción;
 `qs 6.17.1` en `pnpm-workspace.yaml`). `pnpm test` 228/228. El detalle, los
 riesgos residuales y la verificación están en `docs/auditoria-seguridad.md`.
 
+**Spec 013 (resumen de nómina) implementada (2026-11-19):** `Payroll/Period`
+suma `resumen(periodoId)`, que devuelve personas, asignaciones, deducciones,
+neto, aporte patronal y costo total, más el desglose por concepto, y
+`listarConTotales()`, el histórico de períodos con sus totales. Los recibos
+`ANULADO` no suman; el aporte patronal sale de `detalle_recibo` (no es columna
+de `recibo_pago`) y se reporta aparte del neto. Migración
+`016_resumen_nomina.sql` (solo datos) con permisos para `RRHH`, `GerenteRRHH`,
+`Administrador` y `Superusuario`. `pnpm test` 250/250 y
+`scripts/manual/resumen_e2e.mjs` 17/17 → `RESUMEN E2E OK`. Sin cambio de
+esquema ni de topología.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), la pantalla
 `/payroll/pre-nomina` (contrato en `PROMPT-FRONT.md`, repo del front), y
 migrar las consultas de `queries.yaml` a los BO.
@@ -634,11 +645,39 @@ o datos desechables), y ninguna prueba depende de otra.
   demo.** Los contratos de demo no tienen fecha de fin y quedan vigentes en
   cualquier período futuro; el script aborta si hay más de un contrato en su
   período. Necesita un branch desechable, no es una regresión.
+- **`COUNT()` vuelve como `bigint` y `node-pg` lo entrega como texto.** El
+  resumen de nómina convierte `personas` a `Number` en el BO; dejarlo como
+  string hace que el front compare `"3"` con `3` y falle.
+- **El aporte patronal no está en `recibo_pago`.** `total_asignaciones` y
+  `total_deducciones` no lo incluyen; sumarlo desde `detalle_recibo`
+  (`tipo_concepto = 'APORTE_PATRONAL'`) es la única forma de reportarlo, y
+  nunca debe sumarse al neto. El costo total es `asignaciones + patronal`.
+- **El `LATERAL` del histórico necesita `r.id` y `GROUP BY p.id, pn.id`.**
+  Si el lateral se apoya en una columna no agrupada, PostgreSQL responde
+  `42803`; y un `SUM` sobre `recibo_pago` sin filtrar `ANULADO` infla los
+  totales.
 
 ## Decisiones de diseño
 
 Registro de decisiones con su motivo. Las viejas no se editan: si una cambia,
 se agrega una nueva que la reemplaza.
+
+### 2026-11-19
+
+- **El resumen de nómina es de solo lectura y se calcula al vuelo.** No se
+  guardan totales en una tabla: `resumen` y `listarConTotales` suman
+  `recibo_pago`/`detalle_recibo` en cada consulta. Motivo: un total
+  persistido se desincroniza en cuanto se anula un recibo o se paga el
+  período, y la nómina ya es inmutable cuando está `PROCESADO`/`PAGADO`.
+- **El aporte patronal se reporta aparte y suma al costo, no al neto.**
+  `recibo_pago` no tiene columna de patronal; se agrega desde
+  `detalle_recibo` y se expone como `total_aporte_patronal`, con
+  `costo_total = asignaciones + aporte_patronal`. Motivo: sumarlo al neto
+  haría que el recibo del empleado no cuadre con el total del período.
+- **Los permisos del resumen son los mismos de `Period`.** `RRHH`,
+  `GerenteRRHH`, `Administrador` y `Superusuario`; `Empleado` no ve totales
+  de la nómina completa. No hay opción de menú nueva: el resumen vive dentro
+  de la pantalla de períodos.
 
 ### 2026-11-16
 
