@@ -48,13 +48,15 @@ y autentica.
   (`Publico`, `Empleado`, `GerenteRRHH`, `Administrador`, `Superusuario`) y
   sus permisos; `db/seed-usuario-prueba.sql` crea el usuario de prueba
   (`admin_prueba`/`Password123`) ligado a los cuatro perfiles.
-  `db/seed-datos-prueba.sql` (solo desarrollo, idempotente) siembra 12 personas
-  con contrato, cuentas, afiliaciones, recurrentes, horas, novedades, préstamos
-  y 13 períodos, más cuatro usuarios con clave `Password123` (`luis_gomez`,
-  `pedro_hernandez`, `carmen_diaz` como `Empleado`; `rosa_vargas` como
-  `Empleado` + `RRHH`). `scripts/manual/demo_periodos.mjs --yes` procesa y paga
+  `db/seed-datos-prueba.sql` (solo desarrollo, idempotente) siembra 14 personas
+  con contrato, cuentas, afiliaciones, recurrentes, horas hasta dic-2026,
+  novedades, préstamos y 20 períodos, más cinco usuarios con clave
+  `Password123` (`luis_gomez`, `pedro_hernandez`, `carmen_diaz` como
+  `Empleado`; `rosa_vargas` como `Empleado` + `RRHH`; y `admin_prueba`, que
+  además de los cuatro perfiles tiene contrato quincenal de empleado y ve sus
+  propios recibos). `scripts/manual/demo_periodos.mjs --yes` procesa y paga
   algunos de esos períodos con los BO reales y deja una pre-nómina en borrador
-  para probar la pantalla.
+  en `Semana 4 de noviembre 2026` para probar la pantalla.
 
 **Hecho:** el esquema del profesor está consolidado en `db/init.sql`
 (UUID en tablas transaccionales y `persona`/`usuario`/`refresh_token`;
@@ -238,6 +240,16 @@ desglose por concepto, el resumen por empleado y el PDF de cada recibo, sin
 métodos ni permisos nuevos (reutiliza `Period.listarConTotales`,
 `Period.resumen`, `Receipt.listarPorPeriodo` y `Receipt.generarPdf`). El E2E
 del front `pnpm e2e:reportes` pasa 12/12.
+
+**Más períodos y `admin_prueba` como empleado (2026-11-20):** el seed suma 7
+períodos (4 semanales, 2 quincenales y `Diciembre 2026`) y extiende las horas
+de los contratos `POR_HORA` hasta diciembre. `admin_prueba` recibe contrato
+`QUINCENAL`/`SALARIO_FIJO` (15000,00 mensuales), cuenta principal, cuatro
+afiliaciones, un bono recurrente y una novedad aprobada; el demo procesa las
+dos quincenas nuevas y deja 2 recibos suyos. Sin esquema, BO ni permisos
+nuevos. `scripts/manual/mas_nominas_e2e.mjs --yes` verifica 22/22 (datos en
+BD, `misRecibos`, PDF y menú `Empleado`), `pnpm test` 271/271. Seed y demo son
+repetibles.
 
 **Pendiente:** el endpoint del menú y el front (Fase 5), la pantalla
 `/payroll/pre-nomina` y los contratos de resumen, PDF y despidos (el documento
@@ -720,6 +732,15 @@ o datos desechables), y ninguna prueba depende de otra.
   No procesa períodos: verificar la inclusión en la nómina con la consulta
   del período y el prorrateo con el calculador evita tocar los recibos y las
   cuotas de la demo. `despido` se borra antes que `contrato` por la FK.
+- **Un período `PROCESADO` no admite pre-nómina.** `PreNomina.generar` exige
+  `BORRADOR`, igual que `Period.procesar`. El demo movió su borrador de
+  ejemplo a `Semana 4 de noviembre 2026`: regenerar sobre la quincena 1 de
+  noviembre (ya cerrada) daba `409`. Al ampliar el seed, revisar siempre qué
+  períodos quedan en `BORRADOR` antes de apuntar el script.
+- **`psql` se colgó en este entorno al aplicar el seed** (proceso `S<` sin
+  conexión abierta en la BD). Aplicar el SQL con un cliente `pg` del proyecto
+  (`new pg.Client(...).query(sql)`) funciona y respeta `DATABASE_URL`; el
+  helper temporal no se versiona.
 
 ## Decisiones de diseño
 
@@ -738,6 +759,17 @@ se agrega una nueva que la reemplaza.
   Motivo: un endpoint de reporte agregaría una segunda verdad sobre los mismos
   totales y obligaría a mantener permisos nuevos; la vista solo agrega datos
   ya autorizados.
+- **`admin_prueba` entra en nómina por datos, no por código.** El seed le da
+  contrato, salario, cuenta, afiliaciones y un recurrente derivando el
+  `persona_id` desde `usuario.username`; no se tocó `findContratosVigentesPorFrecuencia`
+  ni `Receipt.misRecibos`. Motivo: el perfil `Empleado` ya estaba asignado y el
+  BO solo devuelve recibos de quien tiene contrato en el período; darle
+  un caso de prueba realista valida el flujo completo sin ramas especiales.
+- **Los nuevos períodos nacen en `BORRADOR` y el demo elige cuáles cerrar.**
+  Se procesan cronológicamente dos quincenas, `Diciembre 2026` y `Semana 3 de
+  noviembre 2026`; los otros quedan listos para probar `procesar` desde la
+  pantalla. Motivo: dejar todos abiertos no genera recibos y cerrarlos todos
+  quita material de prueba; la nómina cerrada es inmutable.
 
 ### 2026-11-19
 

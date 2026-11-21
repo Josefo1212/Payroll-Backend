@@ -597,3 +597,29 @@ CORS, headers, manejo de errores y cifrado de datos sensibles.
   fallos preexistentes del `forzado:error-render`. `pnpm typecheck`, `pnpm
   test` 31/31 y `pnpm build` OK. Sin cambio de esquema ni topología: no se
   refresca `archify` ni el grafo.
+
+## 2026-11-20 — Más períodos y `admin_prueba` como empleado (spec 016)
+
+- **Motivo.** `admin_prueba` tenía el perfil `Empleado` pero ningún contrato:
+  `findContratosVigentesPorFrecuencia` no lo devolvía y **Mis recibos** salía
+  vacío. Además, la base de demo se había quedado sin períodos abiertos para
+  seguir probando nóminas.
+- **Seed ampliado (idempotente).** `db/seed-datos-prueba.sql` deriva el
+  `persona_id` de `admin_prueba` desde `usuario.username` y le da contrato
+  `VIGENTE`/`QUINCENAL`, cargo Contador, salario mensual `15000.00`, cuenta
+  principal, cuatro afiliaciones de ley, un bono recurrente y una novedad
+  `APROBADA` en la quincena nueva. Extiende las `generate_series` de horas
+  `POR_HORA` hasta diciembre y agrega 7 períodos (semanales `0007`–`0010`,
+  quincenales `0015`–`0016` y mensual `0023`): 20 en total, 10 semanales,
+  6 quincenales y 4 mensuales.
+- **Demo ajustado.** `scripts/manual/demo_periodos.mjs` procesa `Semana 3 de
+  noviembre 2026`, `Diciembre 2026`, `Quincena 2 de noviembre 2026` y
+  `Quincena 1 de diciembre 2026` (además de los históricos), y mueve su
+  pre-nómina de ejemplo a `Semana 4 de noviembre 2026`: la quincena 1 de
+  noviembre ya está `PROCESADA` y `generar` responde `409`.
+- **Verificación.** `scripts/manual/mas_nominas_e2e.mjs --yes` pasa **22/22**:
+  alta laboral en BD, 20 períodos, 2 recibos de `admin_prueba` en las quincenas
+  nuevas, `misRecibos` por HTTP con login real, `generarPdf` y menú del perfil
+  `Empleado`. `pnpm test` **271/271**. Seed y demo se corrieron dos veces: la
+  segunda omitió todo lo ya procesado sin duplicados. Sin cambio de esquema,
+  BO, permisos ni topología: no se refrescan `archify` ni el grafo.

@@ -3,17 +3,19 @@
 -- ==========================================================
 -- SOLO PARA DESARROLLO. Siembra un equipo realista para probar el front:
 --
---   - 12 personas: 10 activas con contrato, 1 inactiva sin contrato y 1 con
---     contrato FINALIZADO (para probar los filtros de listado).
+--   - Personas: 10 activas con contrato, 1 inactiva sin contrato, 1 con
+--     contrato FINALIZADO, María Ramírez (contrato de prueba por hora) y
+--     admin_prueba (alta quincenal para probar sus propios recibos).
 --   - Contratos con mezcla de SALARIO_FIJO / POR_HORA y de frecuencias
 --     SEMANAL, QUINCENAL y MENSUAL.
 --   - Bancos y cuenta principal (la usa `Period.pagar`).
 --   - Afiliaciones de ley (SSO, paro forzoso, vivienda e INCES).
---   - Conceptos recurrentes, horas normales y extras.
+--   - Conceptos recurrentes, horas normales y extras (hasta dic-2026).
 --   - Novedades APROBADA, PENDIENTE y RECHAZADA.
 --   - Préstamos con cuotas y un préstamo SOLICITADO sin cuotas.
---   - 13 períodos BORRADOR (6 semanales, 4 quincenales y 3 mensuales).
---   - 4 usuarios de prueba con clave 'Password123' (ver abajo).
+--   - 20 períodos (10 semanales, 6 quincenales y 4 mensuales): los nuevos
+--     nacen en BORRADOR; los ya procesados se dejan intactos.
+--   - 5 usuarios de prueba con clave 'Password123' (ver abajo).
 --
 -- Es IDEMPOTENTE: usa UUID fijos y ON CONFLICT, así que se puede correr
 -- varias veces sin duplicar ni romper nada.
@@ -25,8 +27,9 @@
 --   psql "$DATABASE_URL" -f db/seed-datos-prueba.sql
 --   (o node .tmp-pg.mjs db/seed-datos-prueba.sql)
 --
--- Usuarios que crea (todos con clave 'Password123'):
---   admin_prueba      → ya existe (los cuatro perfiles)
+-- Usuarios de prueba (todos con clave 'Password123'):
+--   admin_prueba      → ya existe: perfiles de seguridad y, además, contrato
+--                       quincenal de empleado (Mis recibos).
 --   luis_gomez        → Empleado (semanal, SALARIO_FIJO, con préstamo)
 --   pedro_hernandez   → Empleado (semanal, POR_HORA, con horas extra)
 --   rosa_vargas       → Empleado + RRHH (semanal, SALARIO_FIJO)
@@ -140,6 +143,35 @@ UPDATE contrato_salario cs
    AND c.persona_id = 'fca4d545-fe05-4621-9752-20d353ec67b8'
    AND cs.vigente_hasta IS NULL;
 
+-- admin_prueba ya tenía el perfil Empleado pero no contrato: sin él no entra
+-- en findContratosVigentesPorFrecuencia y Mis recibos queda vacío. El
+-- persona_id se deriva del usuario porque seed-usuario-prueba.sql lo crea con
+-- UUID aleatorio; el id del contrato sí es fijo para repetir el seed.
+INSERT INTO contrato
+  (id, persona_id, cargo_id, fecha_inicio, fecha_fin, tipo_pago,
+   frecuencia_pago, horas_semanales, estado)
+SELECT 'c0000000-0000-4000-8000-000000000013'::uuid, p.id, 2,
+       DATE '2025-01-15', NULL, 'SALARIO_FIJO', 'QUINCENAL', 40, 'VIGENTE'
+  FROM persona p
+  JOIN usuario u ON u.persona_id = p.id
+ WHERE u.username = 'admin_prueba'
+   AND NOT EXISTS (
+     SELECT 1 FROM contrato c
+      WHERE c.persona_id = p.id AND c.estado = 'VIGENTE'
+   )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO contrato_salario (contrato_id, monto, vigente_desde, vigente_hasta, motivo)
+SELECT c.id, 15000.00, DATE '2025-01-15', NULL,
+       'Sueldo mensual de prueba (admin_prueba)'
+  FROM contrato c
+  JOIN persona p ON p.id = c.persona_id
+  JOIN usuario u ON u.persona_id = p.id
+ WHERE u.username = 'admin_prueba'
+   AND c.estado = 'VIGENTE'
+   AND c.frecuencia_pago = 'QUINCENAL'
+ON CONFLICT (contrato_id, vigente_desde) DO NOTHING;
+
 -- ----------------------------------------------------------
 -- 5. Cuenta bancaria principal de cada persona
 -- ----------------------------------------------------------
@@ -160,6 +192,21 @@ FROM (VALUES
   ('fca4d545-fe05-4621-9752-20d353ec67b8'::uuid, '0108', 'AHORRO',    '0108-0011-0011-0011')
 ) AS v(persona_id, codigo_banco, tipo, nro_cuenta)
 JOIN banco b ON b.codigo = v.codigo_banco
+ON CONFLICT (banco_id, nro_cuenta) DO NOTHING;
+
+-- La cuenta principal tiene un índice único parcial, así que además del
+-- conflicto por nro_cuenta se comprueba que admin_prueba no tenga ya una.
+INSERT INTO cuenta_bancaria
+  (persona_id, banco_id, tipo_cuenta, nro_cuenta, es_principal, activa)
+SELECT p.id, b.id, 'AHORRO', '0102-0013-0013-0013', true, true
+  FROM persona p
+  JOIN usuario u ON u.persona_id = p.id
+  JOIN banco b ON b.codigo = '0102'
+ WHERE u.username = 'admin_prueba'
+   AND NOT EXISTS (
+     SELECT 1 FROM cuenta_bancaria cb
+      WHERE cb.persona_id = p.id AND cb.es_principal AND cb.activa
+   )
 ON CONFLICT (banco_id, nro_cuenta) DO NOTHING;
 
 -- ----------------------------------------------------------
@@ -189,6 +236,16 @@ WHERE p.id IN (
 )
 ON CONFLICT (persona_id, tipo_aporte_id) DO NOTHING;
 
+-- El mismo conjunto de aportes de ley para el nuevo empleado de prueba.
+INSERT INTO afiliacion_ley
+  (persona_id, tipo_aporte_id, nro_afiliacion, fecha_inscripcion, estado)
+SELECT p.id, t.id, p.cedula || '-' || t.codigo, DATE '2025-02-01', 'ACTIVO'
+  FROM persona p
+  JOIN usuario u ON u.persona_id = p.id
+  JOIN tipo_aporte_ley t ON t.codigo IN ('SSO', 'PARO_FORZOSO', 'VIVIENDA', 'INCES')
+ WHERE u.username = 'admin_prueba'
+ON CONFLICT (persona_id, tipo_aporte_id) DO NOTHING;
+
 -- ----------------------------------------------------------
 -- 7. Conceptos recurrentes (bonos y descuentos fijos por período)
 --    Los montos son POR PERÍODO, no mensuales: un semanal cobra cada semana.
@@ -208,22 +265,33 @@ VALUES
   ('d0000000-0000-4000-8000-000000000010', 19, 'MONTO_FIJO',        300.0000, '2026-01-01', NULL, 'Descuento por seguro médico')
 ON CONFLICT (persona_id, concepto_id, vigente_desde) DO NOTHING;
 
+-- Bono quincenal de admin_prueba: además del sueldo y de la ley, su recibo
+-- lleva una línea recurrente como el del resto del personal.
+INSERT INTO concepto_persona
+  (persona_id, concepto_id, tipo_valor, valor, vigente_desde, vigente_hasta, observacion)
+SELECT p.id, 15, 'MONTO_FIJO', 200.0000, DATE '2026-01-01', NULL,
+       'Bono de alimentación (quincenal, admin_prueba)'
+  FROM persona p
+  JOIN usuario u ON u.persona_id = p.id
+ WHERE u.username = 'admin_prueba'
+ON CONFLICT (persona_id, concepto_id, vigente_desde) DO NOTHING;
+
 -- ----------------------------------------------------------
 -- 8. Horas normales de las personas POR_HORA (8 h por día hábil)
 --    Solo ellos necesitan horas: el SALARIO_FIJO se prorratea por frecuencia.
 -- ----------------------------------------------------------
--- Semanal: Pedro (p02), oct-nov 2026
+-- Semanal: Pedro (p02), oct-dic 2026
 INSERT INTO registro_horas (persona_id, fecha, horas_normales, horas_extra, registrado_por)
 SELECT 'd0000000-0000-4000-8000-000000000002',
        d::date,
        8,
        0,
        (SELECT id FROM usuario WHERE username = 'admin_prueba')
-FROM generate_series('2026-10-05'::date, '2026-11-15'::date, interval '1 day') d
+FROM generate_series('2026-10-05'::date, '2026-12-13'::date, interval '1 day') d
 WHERE EXTRACT(ISODOW FROM d) BETWEEN 1 AND 5
 ON CONFLICT (persona_id, fecha) DO NOTHING;
 
--- Quincenal: Miguel (p06) y Maria (contrato de prueba), sep-nov 2026
+-- Quincenal: Miguel (p06) y Maria (contrato de prueba), sep-dic 2026
 INSERT INTO registro_horas (persona_id, fecha, horas_normales, horas_extra, registrado_por)
 SELECT v.persona_id,
        d::date,
@@ -234,18 +302,18 @@ FROM (VALUES
   ('d0000000-0000-4000-8000-000000000006'::uuid),
   ('fca4d545-fe05-4621-9752-20d353ec67b8'::uuid)
 ) AS v(persona_id)
-CROSS JOIN generate_series('2026-09-16'::date, '2026-11-15'::date, interval '1 day') d
+CROSS JOIN generate_series('2026-09-16'::date, '2026-12-15'::date, interval '1 day') d
 WHERE EXTRACT(ISODOW FROM d) BETWEEN 1 AND 5
 ON CONFLICT (persona_id, fecha) DO NOTHING;
 
--- Mensual: Daniel (p08), sep-nov 2026
+-- Mensual: Daniel (p08), sep-dic 2026
 INSERT INTO registro_horas (persona_id, fecha, horas_normales, horas_extra, registrado_por)
 SELECT 'd0000000-0000-4000-8000-000000000008',
        d::date,
        8,
        0,
        (SELECT id FROM usuario WHERE username = 'admin_prueba')
-FROM generate_series('2026-09-01'::date, '2026-11-15'::date, interval '1 day') d
+FROM generate_series('2026-09-01'::date, '2026-12-31'::date, interval '1 day') d
 WHERE EXTRACT(ISODOW FROM d) BETWEEN 1 AND 5
 ON CONFLICT (persona_id, fecha) DO NOTHING;
 
@@ -273,14 +341,21 @@ VALUES
   ('b0000000-0000-4000-8000-000000000004', '2026-10-26', '2026-11-01', 'SEMANAL', 'BORRADOR', 'Semana 4 de octubre 2026'),
   ('b0000000-0000-4000-8000-000000000005', '2026-11-02', '2026-11-08', 'SEMANAL', 'BORRADOR', 'Semana 1 de noviembre 2026'),
   ('b0000000-0000-4000-8000-000000000006', '2026-11-09', '2026-11-15', 'SEMANAL', 'BORRADOR', 'Semana 2 de noviembre 2026'),
+  ('b0000000-0000-4000-8000-000000000007', '2026-11-16', '2026-11-22', 'SEMANAL', 'BORRADOR', 'Semana 3 de noviembre 2026'),
+  ('b0000000-0000-4000-8000-000000000008', '2026-11-23', '2026-11-29', 'SEMANAL', 'BORRADOR', 'Semana 4 de noviembre 2026'),
+  ('b0000000-0000-4000-8000-000000000009', '2026-11-30', '2026-12-06', 'SEMANAL', 'BORRADOR', 'Semana 1 de diciembre 2026'),
+  ('b0000000-0000-4000-8000-000000000010', '2026-12-07', '2026-12-13', 'SEMANAL', 'BORRADOR', 'Semana 2 de diciembre 2026'),
   -- Quincenales
   ('b0000000-0000-4000-8000-000000000011', '2026-09-16', '2026-09-30', 'QUINCENAL', 'BORRADOR', 'Quincena 2 de septiembre 2026'),
   ('b0000000-0000-4000-8000-000000000012', '2026-10-01', '2026-10-15', 'QUINCENAL', 'BORRADOR', 'Quincena 1 de octubre 2026'),
   ('b0000000-0000-4000-8000-000000000013', '2026-10-16', '2026-10-31', 'QUINCENAL', 'BORRADOR', 'Quincena 2 de octubre 2026'),
   ('b0000000-0000-4000-8000-000000000014', '2026-11-01', '2026-11-15', 'QUINCENAL', 'BORRADOR', 'Quincena 1 de noviembre 2026'),
+  ('b0000000-0000-4000-8000-000000000015', '2026-11-16', '2026-11-30', 'QUINCENAL', 'BORRADOR', 'Quincena 2 de noviembre 2026'),
+  ('b0000000-0000-4000-8000-000000000016', '2026-12-01', '2026-12-15', 'QUINCENAL', 'BORRADOR', 'Quincena 1 de diciembre 2026'),
   -- Mensuales (noviembre ya existía sin descripción)
   ('b0000000-0000-4000-8000-000000000021', '2026-09-01', '2026-09-30', 'MENSUAL', 'BORRADOR', 'Septiembre 2026'),
-  ('b0000000-0000-4000-8000-000000000022', '2026-10-01', '2026-10-31', 'MENSUAL', 'BORRADOR', 'Octubre 2026')
+  ('b0000000-0000-4000-8000-000000000022', '2026-10-01', '2026-10-31', 'MENSUAL', 'BORRADOR', 'Octubre 2026'),
+  ('b0000000-0000-4000-8000-000000000023', '2026-12-01', '2026-12-31', 'MENSUAL', 'BORRADOR', 'Diciembre 2026')
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE periodo_nomina
@@ -331,7 +406,15 @@ VALUES
    'Bono por guardia del sábado', (SELECT id FROM usuario WHERE username = 'admin_prueba'), NULL),
   ('e0000000-0000-4000-8000-000000000008', 'd0000000-0000-4000-8000-000000000002', 15,
    'b0000000-0000-4000-8000-000000000005', '2026-11-04', NULL, 150.00, 'RECHAZADA',
-   'Bono sin autorización previa', (SELECT id FROM usuario WHERE username = 'admin_prueba'), NULL)
+   'Bono sin autorización previa', (SELECT id FROM usuario WHERE username = 'admin_prueba'), NULL),
+  -- Quincena 2 de noviembre (aprobada): el recibo nuevo de admin_prueba lleva
+  -- también una línea de novedad.
+  ('e0000000-0000-4000-8000-000000000009',
+   (SELECT p.id FROM persona p JOIN usuario u ON u.persona_id = p.id WHERE u.username = 'admin_prueba'),
+   15, 'b0000000-0000-4000-8000-000000000015', '2026-11-20', NULL, 150.00, 'APROBADA',
+   'Bono puntual de prueba para admin_prueba',
+   (SELECT id FROM usuario WHERE username = 'admin_prueba'),
+   (SELECT id FROM usuario WHERE username = 'admin_prueba'))
 ON CONFLICT (id) DO NOTHING;
 
 -- ----------------------------------------------------------
