@@ -230,6 +230,15 @@ ahora incluye contratos `FINALIZADO` con `fecha_fin` dentro del período, y
 días trabajados. `db/schema.dbml` v12 (33 tablas). `pnpm test` 271/271 y
 `scripts/manual/despidos_e2e.mjs` 45/45 → `DESPIDOS E2E OK`.
 
+**Opción de menú Reportes (2026-11-20):** la migración de datos
+`019_reportes_opcion.sql` crea `Payroll/Reportes` (orden 13) para `RRHH` y
+`Superusuario`. El front del repo `proyecto-de-nomina-` la expone en
+`/payroll/reportes` con el resumen final de todos los períodos emitidos, el
+desglose por concepto, el resumen por empleado y el PDF de cada recibo, sin
+métodos ni permisos nuevos (reutiliza `Period.listarConTotales`,
+`Period.resumen`, `Receipt.listarPorPeriodo` y `Receipt.generarPdf`). El E2E
+del front `pnpm e2e:reportes` pasa 12/12.
+
 **Pendiente:** el endpoint del menú y el front (Fase 5), la pantalla
 `/payroll/pre-nomina` y los contratos de resumen, PDF y despidos (el documento
 `PROMPT-FRONT-NOMINA.md` del repo del front), y migrar las consultas de
@@ -702,6 +711,11 @@ o datos desechables), y ninguna prueba depende de otra.
   contrato para no interbloquear; después `despido`, `persona`, `usuario`,
   `refresh_token` y `sesion`. Si algo falla, el `ROLLBACK` deja todo como
   estaba (la persona no queda a medias entre activa y despedida).
+- **Sembrar una opción por migración exige recargar los permisos en memoria.**
+  `PermissionOptionMap` se llena al arrancar (`src/index.js`); si la opción se
+  inserta en la BD con el servidor ya vivo, `getOptions` no la devuelve hasta
+  llamar `Security/Admin/reloadPermissions` o reiniciar. El E2E del front lo
+  recarga antes de comprobar el menú.
 - **El E2E de despidos crea usuarios desechables y los borra en `finally`.**
   No procesa períodos: verificar la inclusión en la nómina con la consulta
   del período y el prorrateo con el calculador evita tocar los recibos y las
@@ -711,6 +725,19 @@ o datos desechables), y ninguna prueba depende de otra.
 
 Registro de decisiones con su motivo. Las viejas no se editan: si una cambia,
 se agrega una nueva que la reemplaza.
+
+### 2026-11-20
+
+- **La opción `Reportes` es solo de `RRHH` y `Superusuario`.** Se siembra con
+  la migración de datos 019 y el `DELETE` final revierte cualquier grant que
+  el seed hubiera concedido a otros perfiles al reejecutarse. Motivo: es la
+  misma audiencia de `Personas`, `Despidos` y `PreNomina`; `Administrador`
+  opera `Payroll` pero no administra ni reporta la nómina completa.
+- **La pantalla de reportes no agrega contrato de API.** Reutiliza los cuatro
+  métodos ya sembrados para el resumen, el detalle de períodos y el PDF.
+  Motivo: un endpoint de reporte agregaría una segunda verdad sobre los mismos
+  totales y obligaría a mantener permisos nuevos; la vista solo agrega datos
+  ya autorizados.
 
 ### 2026-11-19
 

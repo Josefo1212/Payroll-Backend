@@ -575,3 +575,25 @@ CORS, headers, manejo de errores y cifrado de datos sensibles.
   persona de prueba, despido, verificación en BD, inclusión en la nómina,
   prorrateo, `403` de Empleado y Administrador, y limpieza total en
   `finally`. Diagrama `archify` refrescado (9/9 checks, visual-check OK).
+
+## 2026-11-20 — Opción de menú Reportes
+
+- **La pantalla de reportes ya tiene entrada en el menú.** La migración
+  `019_reportes_opcion.sql` (solo datos, idempotente) crea la opción
+  `Payroll/Reportes` con orden 13 y se la concede a `RRHH` y `Superusuario`.
+  No hay métodos ni permisos nuevos: la pantalla reutiliza
+  `Period.listarConTotales`, `Period.resumen`, `Receipt.listarPorPeriodo` y
+  `Receipt.generarPdf`.
+- **El front la conectó en el repo `proyecto-de-nomina-`.** Ruta
+  `/payroll/reportes`, entrada `Reportes` en `MENU_ROUTE_MAP` con ícono
+  `FileBarChart` y guardia por roles `superuser`/`rrhh`. Muestra el resumen
+  final de todos los períodos emitidos, desglose por concepto, resumen por
+  empleado y cada recibo con su PDF; la impresión aisla la página con CSS.
+- **Verificación.** Tras sembrar la opción se llamó
+  `Security/Admin/reloadPermissions` (los mapas se cargan al arrancar) y el
+  E2E del front `pnpm e2e:reportes` pasó **12/12**: menú, tres secciones, 11
+  empleados, 32 recibos y descarga PDF real. `pnpm e2e:nav` recorrió 65
+  páginas con 0 errores de consola y 0 peticiones ≥400; siguen los tres
+  fallos preexistentes del `forzado:error-render`. `pnpm typecheck`, `pnpm
+  test` 31/31 y `pnpm build` OK. Sin cambio de esquema ni topología: no se
+  refresca `archify` ni el grafo.
